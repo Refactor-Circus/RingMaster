@@ -74,6 +74,20 @@ class Spec extends Model
         return $rounds === [] ? [] : $rounds[array_key_last($rounds)]['reports'];
     }
 
+    /**
+     * The interface tone for the spec's board column.
+     */
+    public function tone(): string
+    {
+        return match ($this->column) {
+            'Building' => 'live',
+            'Needs you' => 'wait',
+            'In review' => 'review',
+            'Done' => 'done',
+            default => 'idle',
+        };
+    }
+
     public function ticketKey(): ?string
     {
         $key = $this->ticket['key'] ?? null;

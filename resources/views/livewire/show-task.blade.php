@@ -1,13 +1,11 @@
-<div wire:poll.5s="refresh" class="space-y-6">
-    <div class="space-y-2">
-        <flux:breadcrumbs>
-            <flux:breadcrumbs.item :href="route('tasks')" wire:navigate>Tasks</flux:breadcrumbs.item>
-            <flux:breadcrumbs.item>{{ $task->project->folder }}</flux:breadcrumbs.item>
-        </flux:breadcrumbs>
+<div wire:poll.5s="refresh" class="space-y-8">
+    <div class="space-y-4">
+        <div class="rm-mono flex items-center gap-2 text-xs text-zinc-500">
+            <a href="{{ route('tasks') }}" wire:navigate class="hover:text-cyan-300">Tasks</a><span>/</span><span>{{ $task->project->folder }}</span><span>/</span><span>#{{ $task->id }}</span>
+        </div>
 
         <div class="flex flex-wrap items-start justify-between gap-4">
-            <flux:heading size="xl" level="1">{{ $task->title }}</flux:heading>
-
+            <h1 class="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{{ $task->title }}</h1>
             <div class="flex gap-2">
                 @if ($task->status->isOpen())
                     @unless ($editing)
@@ -21,22 +19,26 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-            <flux:badge :color="$task->status->color()">{{ $task->status->label() }}</flux:badge>
-            <flux:badge :color="$task->priority->color()">{{ $task->priority->label() }}</flux:badge>
-            <flux:text>{{ $task->kind->label() }}@if ($task->ticket_ref) · {{ $task->ticket_ref }}@endif</flux:text>
+            <x-rm.pill :tone="$task->status->tone()" dot :ping="$task->status->tone() === 'live'">{{ $task->status->label() }}</x-rm.pill>
+            <x-rm.pill :tone="match ($task->priority->value) { 3 => 'fail', 2 => 'wait', default => 'idle' }">{{ strtolower($task->priority->label()) }} priority</x-rm.pill>
+            <span class="rm-mono text-xs text-zinc-400">{{ strtolower($task->kind->label()) }}@if ($task->ticket_ref) · {{ $task->ticket_ref }}@endif</span>
             @if ($task->spec)
-                <flux:link :href="route('specs.show', $task->spec)" wire:navigate>Spec: {{ $task->spec->title }} ({{ $task->spec->status }})</flux:link>
+                <a href="{{ route('specs.show', $task->spec) }}" wire:navigate class="rm-mono text-xs text-cyan-300 hover:underline">Spec: {{ $task->spec->title }} ({{ $task->spec->status }})</a>
             @elseif ($task->status->isOpen())
-                <flux:text size="sm">No spec yet: Claude creates one when it picks this up.</flux:text>
+                <span class="rm-mono text-xs text-zinc-500">No spec yet: Claude creates one when it picks this up.</span>
             @endif
             @if ($task->claimed_by)
-                <flux:text size="sm">Claimed by {{ $task->claimed_by }} {{ $task->claimed_at?->diffForHumans() }}</flux:text>
+                <span class="rm-mono text-xs text-zinc-500">· claimed by {{ $task->claimed_by }} {{ $task->claimed_at?->diffForHumans() }}</span>
             @endif
         </div>
+
+        @if ($task->spec)
+            <x-rm.stages :status="$task->spec->status" :has-rounds="$task->spec->rounds !== []" />
+        @endif
     </div>
 
     @if ($editing)
-        <flux:card>
+        <div class="rm-panel rm-signal-edge p-6">
             <form wire:submit="save" class="space-y-4">
                 <flux:input wire:model="title" label="Title" />
                 @if ($task->kind === \App\Enums\TaskKind::Ticket)
@@ -53,46 +55,51 @@
                     <flux:button wire:click="$set('editing', false)" variant="ghost" size="sm">Cancel</flux:button>
                 </div>
             </form>
-        </flux:card>
+        </div>
     @elseif ($task->body)
-        <flux:card>
-            <div class="prose-spec whitespace-pre-line text-zinc-800 dark:text-zinc-200">{{ $task->body }}</div>
-        </flux:card>
+        <div class="rm-panel p-6">
+            <div class="rm-kicker mb-3">brief</div>
+            <div class="whitespace-pre-line leading-relaxed text-zinc-200">{{ $task->body }}</div>
+        </div>
     @endif
 
     <flux:error name="status" />
 
     @if ($items->isNotEmpty())
         <section class="space-y-3">
-            <flux:heading size="lg">Needs you</flux:heading>
+            <div class="flex items-center gap-3"><span class="rm-dot rm-tone-wait rm-dot-ping"></span><h2 class="text-sm font-medium text-white">Needs you</h2></div>
             @foreach ($items as $item)
                 <livewire:answer-item :item="$item" :wire:key="'item-'.$item->id" />
             @endforeach
         </section>
     @endif
 
-    @if ($runs->isNotEmpty())
-        <section class="space-y-2">
-            <flux:heading size="lg">Runs</flux:heading>
-            @foreach ($runs as $run)
-                <div class="flex items-center gap-2 text-sm" wire:key="run-{{ $run->id }}">
-                    <flux:link :href="route('runs.show', $run)" wire:navigate>#{{ $run->id }}</flux:link>
-                    <flux:badge size="sm" :color="$run->status->color()">{{ $run->status->value }}</flux:badge>
-                    <flux:text size="sm">{{ $run->started_at?->diffForHumans() }}@if ($run->cost_usd !== null) · ${{ $run->cost_usd }}@endif</flux:text>
-                </div>
-            @endforeach
+    <div class="grid gap-6 lg:grid-cols-[1fr_20rem]">
+        <section class="space-y-3">
+            <h2 class="rm-kicker">Timeline</h2>
+            <ol class="relative space-y-4 border-l border-white/10 pl-6">
+                @foreach ($timeline as $entry)
+                    <li class="rm-rise relative rm-tone-{{ \App\Livewire\ActivityFeed::tone($entry->type) }}" wire:key="activity-{{ $entry->id }}">
+                        <span class="rm-dot absolute -left-[1.68rem] top-1.5" style="width:.45rem;height:.45rem"></span>
+                        <p class="text-sm text-zinc-200">{{ $entry->message }}</p>
+                        <p class="rm-mono text-[10px] text-zinc-500">{{ $entry->created_at?->format('M j, H:i:s') }}</p>
+                    </li>
+                @endforeach
+            </ol>
         </section>
-    @endif
 
-    <section class="space-y-3">
-        <flux:heading size="lg">Timeline</flux:heading>
-        <ol class="space-y-2 border-l border-zinc-200 pl-4 dark:border-zinc-700">
-            @foreach ($timeline as $entry)
-                <li class="text-sm" wire:key="activity-{{ $entry->id }}">
-                    <span class="text-zinc-400">{{ $entry->created_at?->format('M j, H:i') }}</span>
-                    <span class="text-zinc-800 dark:text-zinc-200">{{ $entry->message }}</span>
-                </li>
-            @endforeach
-        </ol>
-    </section>
+        @if ($runs->isNotEmpty())
+            <section class="space-y-3">
+                <h2 class="rm-kicker">Runs</h2>
+                @foreach ($runs as $run)
+                    <a href="{{ route('runs.show', $run) }}" wire:navigate wire:key="run-{{ $run->id }}" class="rm-panel rm-panel-hover rm-tone-{{ $run->status->tone() }} flex items-center gap-3 px-4 py-3">
+                        <span @class(['rm-orb', 'is-live' => $run->status->isActive()])></span>
+                        <span class="rm-mono text-sm text-white">#{{ $run->id }}</span>
+                        <span class="rm-mono text-xs text-zinc-400">{{ $run->status->value }}</span>
+                        <span class="rm-mono ml-auto text-xs text-zinc-500">{{ $run->started_at?->diffForHumans(short: true) }}@if ($run->cost_usd !== null) · ${{ $run->cost_usd }}@endif</span>
+                    </a>
+                @endforeach
+            </section>
+        @endif
+    </div>
 </div>

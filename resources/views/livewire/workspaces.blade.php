@@ -1,32 +1,33 @@
-<div class="space-y-6">
-    <div class="flex flex-wrap items-end justify-between gap-4">
-        <div>
-            <flux:heading size="xl" level="1">Workspaces</flux:heading>
-            <flux:text>Folders RingMaster scans for packages and their spec folders.</flux:text>
-        </div>
+<div class="space-y-8">
+    <x-rm.header kicker="sources" title="Workspaces">
+        <x-slot:lead>Folders RingMaster watches. Spec folders stay the source of truth; RingMaster mirrors them.</x-slot:lead>
+        <x-slot:actions>
+            <flux:button wire:click="scanNow" icon="arrow-path" size="sm">Scan now</flux:button>
+        </x-slot:actions>
+    </x-rm.header>
 
-        <flux:button wire:click="scanNow" icon="arrow-path" size="sm">Scan now</flux:button>
-    </div>
-
-    <form wire:submit="add" class="flex flex-wrap items-start gap-3">
-        <flux:input wire:model="path" placeholder="~/Projects/packages" class="max-w-md" />
-        <flux:button type="submit" variant="primary">Add folder</flux:button>
-        <flux:error name="path" class="w-full" />
+    <form wire:submit="add" class="rm-panel flex flex-wrap items-center gap-3 p-3">
+        <flux:icon name="folder-plus" variant="mini" class="ml-2 text-cyan-300" />
+        <input wire:model="path" placeholder="~/Projects/packages" class="rm-mono min-w-0 flex-1 bg-transparent text-sm text-white placeholder:text-zinc-600 focus:outline-none">
+        <flux:button type="submit" variant="primary" size="sm">Add folder</flux:button>
+        <flux:error name="path" class="w-full px-2" />
     </form>
 
     @forelse ($workspaces as $workspace)
-        <flux:card wire:key="workspace-{{ $workspace->id }}" class="space-y-4">
+        <section wire:key="workspace-{{ $workspace->id }}" @class(['rm-panel space-y-5 p-6', 'opacity-60' => ! $workspace->enabled])>
             <div class="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                    <flux:heading>{{ $workspace->name }}</flux:heading>
-                    <flux:text class="font-mono text-sm">{{ $workspace->path }}</flux:text>
-                    <flux:text size="sm">
+                <div class="space-y-1">
+                    <div class="flex items-center gap-3">
+                        <span @class(['rm-orb', 'rm-tone-'.($workspace->error ? 'fail' : ($workspace->enabled ? 'live' : 'idle')), 'is-live' => $workspace->enabled && ! $workspace->error]) style="width:.6rem;height:.6rem"></span>
+                        <h2 class="text-lg font-medium text-white">{{ $workspace->name }}</h2>
+                    </div>
+                    <div class="rm-mono text-xs text-zinc-400">{{ $workspace->path }}</div>
+                    <div class="rm-mono text-[11px] text-zinc-500">
                         {{ $workspace->projects->count() }} {{ Str::plural('project', $workspace->projects->count()) }}
                         @if ($workspace->scanned_at) · scanned {{ $workspace->scanned_at->diffForHumans() }} @endif
                         @if ($workspace->from_config) · from RING_MASTER_WORKSPACES @endif
-                    </flux:text>
+                    </div>
                 </div>
-
                 <div class="flex items-center gap-3">
                     <flux:switch :checked="$workspace->enabled" wire:click="toggle({{ $workspace->id }})" label="Enabled" />
                     @unless ($workspace->from_config)
@@ -36,31 +37,27 @@
             </div>
 
             @if ($workspace->error)
-                <flux:callout icon="exclamation-triangle" color="red">
-                    <flux:callout.text>{{ $workspace->error }}</flux:callout.text>
-                </flux:callout>
+                <div class="rm-panel rm-tone-fail rm-edge px-4 py-3 text-sm text-rose-200">{{ $workspace->error }}</div>
             @endif
 
             @if ($workspace->projects->isNotEmpty())
-                <flux:table>
-                    <flux:table.columns>
-                        <flux:table.column>Folder</flux:table.column>
-                        <flux:table.column>Package</flux:table.column>
-                        <flux:table.column align="end">Specs</flux:table.column>
-                    </flux:table.columns>
-                    <flux:table.rows>
-                        @foreach ($workspace->projects as $project)
-                            <flux:table.row wire:key="project-{{ $project->id }}">
-                                <flux:table.cell>{{ $project->folder }} @if ($project->is_workspace) <flux:badge size="sm" color="sky">workspace</flux:badge> @endif</flux:table.cell>
-                                <flux:table.cell class="font-mono text-sm">{{ $project->name }}</flux:table.cell>
-                                <flux:table.cell align="end">{{ $project->specs_count }}</flux:table.cell>
-                            </flux:table.row>
-                        @endforeach
-                    </flux:table.rows>
-                </flux:table>
+                <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    @foreach ($workspace->projects as $project)
+                        <div wire:key="project-{{ $project->id }}" class="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3">
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2">
+                                    <span class="truncate text-sm text-white">{{ $project->folder }}</span>
+                                    @if ($project->is_workspace)<x-rm.pill tone="review">workspace</x-rm.pill>@endif
+                                </div>
+                                <div class="rm-mono truncate text-[11px] text-zinc-500">{{ $project->name }}</div>
+                            </div>
+                            <span class="rm-mono text-xs text-zinc-400">{{ $project->specs_count }}<span class="text-zinc-600"> specs</span></span>
+                        </div>
+                    @endforeach
+                </div>
             @endif
-        </flux:card>
+        </section>
     @empty
-        <flux:text>No workspaces yet. Add a folder above.</flux:text>
+        <x-rm.empty icon="folder">No workspaces yet. Add a folder above.</x-rm.empty>
     @endforelse
 </div>

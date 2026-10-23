@@ -1,76 +1,93 @@
 @php($escalation = $item->kind === \App\Enums\AttentionKind::Escalation)
-<flux:card class="space-y-4" data-attention="{{ $item->id }}">
-    <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0 space-y-1">
-            @if ($showSpec)
-                <flux:link :href="route('specs.show', $item->spec)" wire:navigate class="text-sm">{{ $item->spec->project->folder }} · {{ $item->spec->title }}</flux:link>
-            @endif
-            <flux:heading class="leading-snug">{{ $item->question }}</flux:heading>
-        </div>
-
-        <div class="flex shrink-0 gap-1">
-            <flux:badge size="sm" :color="$escalation ? 'red' : 'amber'">{{ $escalation ? 'Escalation' : 'Decision' }}</flux:badge>
+@php($tone = $escalation ? 'fail' : 'wait')
+<article @class(['rm-panel rm-tone-'.$tone, 'rm-signal-edge' => $editing]) data-attention="{{ $item->id }}">
+    <div class="space-y-5 p-5 sm:p-6">
+        <div class="flex flex-wrap items-center gap-2">
+            <x-rm.pill :tone="$tone" dot :ping="$item->status === \App\Enums\AttentionStatus::Open">{{ $escalation ? 'escalation' : 'decision' }}</x-rm.pill>
             @if ($item->source)
-                <flux:badge size="sm">{{ $item->source }}</flux:badge>
+                <span class="rm-kicker">from {{ $item->source }}</span>
+            @endif
+            @if ($showSpec)
+                <a href="{{ route('specs.show', $item->spec) }}" wire:navigate class="rm-mono ml-auto truncate text-xs text-zinc-500 hover:text-cyan-300">{{ $item->spec->project->folder }} / {{ $item->spec->title }}</a>
             @endif
         </div>
-    </div>
 
-    @if ($item->evidence)
-        <details @if ($escalation) open @endif>
-            <summary class="cursor-pointer text-sm text-zinc-500">{{ $escalation ? 'Reasons and findings' : 'Evidence' }}</summary>
-            <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-zinc-50 p-3 text-sm dark:bg-zinc-900">{{ $item->evidence }}</pre>
-        </details>
-    @endif
+        <h3 class="text-lg font-medium leading-snug tracking-tight text-white sm:text-xl">{{ $item->question }}</h3>
 
-    @if ($editing)
-        <form wire:submit="save" class="space-y-4">
-            <flux:radio.group wire:model.live="choice" label="Your answer">
-                @foreach ($item->orderedOptions() as $option)
-                    <flux:radio :value="$option" :label="$option" :description="$option === $item->recommendation ? 'Recommended' : null" />
-                @endforeach
-                @unless ($escalation)
-                    <flux:radio :value="\App\Livewire\AnswerItem::OTHER" label="Something else" />
-                @endunless
-            </flux:radio.group>
+        @if ($item->evidence)
+            <details @if ($escalation) open @endif class="group">
+                <summary class="rm-kicker flex cursor-pointer list-none items-center gap-2 hover:text-zinc-200">
+                    <flux:icon name="chevron-right" variant="micro" class="transition group-open:rotate-90" />{{ $escalation ? 'reasons and findings' : 'evidence' }}
+                </summary>
+                <pre class="rm-terminal mt-2 max-h-64 overflow-auto whitespace-pre-wrap p-4 text-zinc-300">{{ $item->evidence }}</pre>
+            </details>
+        @endif
 
-            @if ($choice === \App\Livewire\AnswerItem::OTHER)
-                <flux:textarea wire:model="other" rows="2" placeholder="Your own answer" />
-            @endif
+        @if ($editing)
+            <form wire:submit="save" class="space-y-4">
+                <div class="grid gap-2 sm:grid-cols-2">
+                    @foreach ($item->orderedOptions() as $option)
+                        <label wire:key="option-{{ $loop->index }}" @class(['rm-tile', 'is-on' => $choice === $option])>
+                            <input type="radio" wire:model.live="choice" value="{{ $option }}" class="sr-only">
+                            <span class="flex items-start justify-between gap-3">
+                                <span class="text-sm text-zinc-100">{{ $option }}</span>
+                                @if ($option === $item->recommendation)
+                                    <span class="rm-pill rm-tone-live shrink-0"><flux:icon name="sparkles" variant="micro" class="size-3" />AI recommends</span>
+                                @endif
+                            </span>
+                            @if ($option === $item->recommendation)
+                                <span class="sr-only">Recommended</span>
+                            @endif
+                        </label>
+                    @endforeach
+                    @unless ($escalation)
+                        <label @class(['rm-tile', 'is-on' => $choice === \App\Livewire\AnswerItem::OTHER])>
+                            <input type="radio" wire:model.live="choice" value="{{ \App\Livewire\AnswerItem::OTHER }}" class="sr-only">
+                            <span class="flex items-center gap-2 text-sm text-zinc-400"><flux:icon name="pencil" variant="micro" />Something else</span>
+                        </label>
+                    @endunless
+                </div>
 
-            <flux:error name="answer" />
-
-            <flux:textarea wire:model="note" rows="2" :label="$escalation ? 'Note (required to send it back)' : 'Why (optional)'" :placeholder="$escalation ? 'What to change' : 'Your rationale, recorded in decisions.md'" />
-
-            <div class="flex gap-2">
-                <flux:button type="submit" variant="primary" size="sm">Save answer</flux:button>
-                @if ($item->status === \App\Enums\AttentionStatus::Answered)
-                    <flux:button wire:click="cancel" size="sm" variant="ghost">Keep the current answer</flux:button>
+                @if ($choice === \App\Livewire\AnswerItem::OTHER)
+                    <textarea wire:model="other" rows="2" placeholder="Your own answer" class="rm-terminal w-full p-3 text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400/50 focus:outline-none"></textarea>
                 @endif
-            </div>
-        </form>
-    @else
-        <div class="space-y-2">
-            <div class="flex flex-wrap items-center gap-2">
-                <flux:text class="font-medium text-zinc-800 dark:text-zinc-100">{{ $item->answer ?? 'No answer recorded here' }}</flux:text>
+
+                <flux:error name="answer" />
+
+                <textarea wire:model="note" rows="2" placeholder="{{ $escalation ? 'What to change (required to send it back)' : 'Why, in your words: recorded in decisions.md (optional)' }}" class="w-full rounded-xl border border-white/10 bg-black/30 p-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400/50 focus:outline-none"></textarea>
+                <flux:error name="note" />
+
+                <div class="flex flex-wrap items-center gap-3">
+                    <button type="submit" class="group relative inline-flex items-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-cyan-400 via-indigo-400 to-fuchsia-400 px-4 py-2 text-sm font-medium text-zinc-950 shadow-[0_0_30px_-8px_var(--color-signal-2)] transition hover:brightness-110">
+                        <flux:icon name="check" variant="micro" />Save answer
+                    </button>
+                    @if ($item->status === \App\Enums\AttentionStatus::Answered)
+                        <button type="button" wire:click="cancel" class="rm-mono text-xs text-zinc-500 hover:text-zinc-200">Keep the current answer</button>
+                    @endif
+                    <span class="rm-kicker ml-auto hidden sm:inline">claude applies it to the spec folder</span>
+                </div>
+            </form>
+        @else
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="rm-terminal flex-1 px-4 py-3 text-sm text-white"><span class="text-cyan-300">›</span> {{ $item->answer ?? 'No answer recorded here' }}</div>
                 @switch ($item->status)
                     @case (\App\Enums\AttentionStatus::Answered)
-                        <flux:badge size="sm" color="sky">Waiting for Claude to apply</flux:badge>
+                        <x-rm.pill tone="live" dot ping>Waiting for Claude to apply</x-rm.pill>
                         @break
                     @case (\App\Enums\AttentionStatus::Applied)
-                        <flux:badge size="sm" color="green">Applied {{ $item->applied_at?->diffForHumans() }}</flux:badge>
+                        <x-rm.pill tone="done" dot>Applied {{ $item->applied_at?->diffForHumans() }}</x-rm.pill>
                         @break
                     @case (\App\Enums\AttentionStatus::Closed)
-                        <flux:badge size="sm">Answered in a session</flux:badge>
+                        <x-rm.pill tone="idle">Answered in a session</x-rm.pill>
                         @break
                 @endswitch
             </div>
             @if ($item->note)
-                <flux:text size="sm">{{ $item->note }}</flux:text>
+                <p class="text-sm text-zinc-400">{{ $item->note }}</p>
             @endif
             @if ($item->status === \App\Enums\AttentionStatus::Answered)
-                <flux:button wire:click="edit" size="sm" variant="ghost" icon="pencil">Change</flux:button>
+                <button type="button" wire:click="edit" class="rm-mono inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-cyan-300"><flux:icon name="pencil" variant="micro" />Change</button>
             @endif
-        </div>
-    @endif
-</flux:card>
+        @endif
+    </div>
+</article>

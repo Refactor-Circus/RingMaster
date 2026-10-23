@@ -23,6 +23,16 @@ enum RunStatus: string
         };
     }
 
+    public function tone(): string
+    {
+        return match ($this) {
+            self::Running, self::Stopping => 'live',
+            self::Succeeded => 'done',
+            self::Failed => 'fail',
+            self::Stopped => 'idle',
+        };
+    }
+
     public function isActive(): bool
     {
         return $this === self::Running || $this === self::Stopping;

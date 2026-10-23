@@ -49,6 +49,21 @@ enum TaskStatus: string
         };
     }
 
+    /**
+     * The interface tone: live, wait, review, done, fail or idle.
+     */
+    public function tone(): string
+    {
+        return match ($this) {
+            self::Claimed, self::Running => 'live',
+            self::NeedsAttention => 'wait',
+            self::InReview => 'review',
+            self::Done => 'done',
+            self::Failed => 'fail',
+            self::Queued, self::Cancelled => 'idle',
+        };
+    }
+
     /** Still waiting for or under work. */
     public function isOpen(): bool
     {

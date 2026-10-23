@@ -3,7 +3,10 @@
 namespace App\Providers;
 
 use App\Enums\AttentionStatus;
+use App\Enums\TaskStatus;
 use App\Models\AttentionItem;
+use App\Models\Task;
+use App\Runner\Runner;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +36,8 @@ class AppServiceProvider extends ServiceProvider
                 ->where('status', AttentionStatus::Open)
                 ->whereHas('spec.project.workspace', fn ($query) => $query->where('enabled', true))
                 ->count());
+            $view->with('queued', Task::query()->where('status', TaskStatus::Queued)->count());
+            $view->with('runner', Runner::alive() ? (Runner::paused() ? 'wait' : 'live') : 'idle');
         });
     }
 

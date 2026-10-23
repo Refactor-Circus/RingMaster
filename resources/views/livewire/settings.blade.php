@@ -1,26 +1,24 @@
-<div class="space-y-6">
-    <div>
-        <flux:heading size="xl" level="1">Settings</flux:heading>
-        <flux:text>RingMaster reads its settings from <code class="font-mono">.env</code> (see <code class="font-mono">config/ring-master.php</code>); restart the server and the runner after changing them.</flux:text>
-    </div>
+<div class="space-y-8">
+    <x-rm.header kicker="configuration" title="Settings">
+        <x-slot:lead>RingMaster reads its settings from .env (see config/ring-master.php). Restart the runner after changing them.</x-slot:lead>
+    </x-rm.header>
 
-    <flux:card class="space-y-4">
-        <flux:heading size="lg">Notifications</flux:heading>
-        <flux:text>New questions and escalations, tasks that failed, and answers a run could not apply.</flux:text>
-
-        <div class="grid gap-2 text-sm sm:grid-cols-[10rem_1fr]">
-            <span class="text-zinc-500">Channels</span>
-            <span>{{ $channels === [] ? 'none (RING_MASTER_NOTIFY)' : implode(', ', $channels) }}</span>
-            <span class="text-zinc-500">Mail to</span>
-            <span>{{ $mailTo ?? '—' }}</span>
-            <span class="text-zinc-500">Webhook</span>
-            <span>{{ $webhook ?? '—' }}</span>
+    <section class="rm-panel space-y-6 p-6">
+        <div>
+            <h2 class="text-lg font-medium text-white">Notifications</h2>
+            <p class="text-sm text-zinc-400">New questions and escalations, tasks that failed, and answers a run could not apply.</p>
         </div>
+
+        <dl class="rm-mono grid gap-3 text-sm sm:grid-cols-[10rem_1fr]">
+            <dt class="text-zinc-500">channels</dt><dd class="text-zinc-200">{{ $channels === [] ? 'none (RING_MASTER_NOTIFY)' : implode(', ', $channels) }}</dd>
+            <dt class="text-zinc-500">mail to</dt><dd class="text-zinc-200">{{ $mailTo ?? '—' }}</dd>
+            <dt class="text-zinc-500">webhook</dt><dd class="text-zinc-200">{{ $webhook ?? '—' }}</dd>
+        </dl>
 
         <div class="flex flex-wrap items-center gap-3">
             <flux:button wire:click="test" size="sm" icon="bell">Send a test notification</flux:button>
             @if ($sent)
-                <flux:text size="sm">{{ $sent }}</flux:text>
+                <span class="rm-mono text-xs text-cyan-200">{{ $sent }}</span>
             @endif
         </div>
 
@@ -34,26 +32,33 @@
                     try { localStorage.setItem('ring-master.notifications', this.on ? 'on' : 'off') } catch (e) {}
                 },
                 disable() { this.on = false; try { localStorage.setItem('ring-master.notifications', 'off') } catch (e) {} },
-            }" class="flex flex-wrap items-center gap-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-            <flux:text size="sm" class="font-medium">Browser notifications in this tab</flux:text>
-            <template x-if="state === 'unsupported'"><flux:text size="sm">not supported by this browser</flux:text></template>
+            }" class="flex flex-wrap items-center gap-3 border-t border-white/5 pt-5">
+            <span class="text-sm text-zinc-200">Browser notifications in this tab</span>
+            <template x-if="state === 'unsupported'"><span class="rm-mono text-xs text-zinc-500">not supported by this browser</span></template>
             <template x-if="state !== 'unsupported' && ! on"><flux:button x-on:click="enable()" size="sm">Enable</flux:button></template>
-            <template x-if="on"><flux:button x-on:click="disable()" size="sm" variant="ghost">Turn off</flux:button></template>
-            <template x-if="state === 'denied'"><flux:text size="sm">blocked: allow notifications for this site in the browser</flux:text></template>
+            <template x-if="on"><span class="flex items-center gap-3"><x-rm.pill tone="done" dot>on</x-rm.pill><flux:button x-on:click="disable()" size="sm" variant="ghost">Turn off</flux:button></span></template>
+            <template x-if="state === 'denied'"><span class="rm-mono text-xs text-amber-300">blocked: allow notifications for this site in the browser</span></template>
         </div>
-    </flux:card>
+    </section>
 
-    <flux:card class="space-y-3">
-        <flux:heading size="lg">Runner and claims</flux:heading>
-        <div class="grid gap-2 text-sm sm:grid-cols-[14rem_1fr]">
-            <span class="text-zinc-500">Concurrency</span><span>{{ $runner['concurrency'] }}</span>
-            <span class="text-zinc-500">Model</span><span>{{ $runner['model'] ?: 'session default' }}</span>
-            <span class="text-zinc-500">Budget per session</span><span>{{ $runner['max_budget_usd'] ? '$'.$runner['max_budget_usd'] : 'no cap' }}</span>
-            <span class="text-zinc-500">Attempts per task</span><span>{{ $runner['max_attempts'] }}</span>
-            <span class="text-zinc-500">Claim lease</span><span>{{ $claims['lease_seconds'] }} s</span>
-            <span class="text-zinc-500">Building counts as stalled after</span><span>{{ $claims['building_stall_minutes'] }} min without file changes</span>
-            <span class="text-zinc-500">Allowed tools</span><span class="font-mono text-xs">{{ implode(' · ', $runner['allowed_tools']) }}</span>
-            <span class="text-zinc-500">Workspaces from .env</span><span class="font-mono text-xs">{{ implode(', ', $workspaces) ?: '—' }}</span>
+    <section class="rm-panel space-y-5 p-6">
+        <h2 class="text-lg font-medium text-white">Runner and claims</h2>
+        <dl class="rm-mono grid gap-3 text-sm sm:grid-cols-[16rem_1fr]">
+            <dt class="text-zinc-500">concurrency</dt><dd class="text-zinc-200">{{ $runner['concurrency'] }}</dd>
+            <dt class="text-zinc-500">model</dt><dd class="text-zinc-200">{{ $runner['model'] ?: 'session default' }}</dd>
+            <dt class="text-zinc-500">budget per session</dt><dd class="text-zinc-200">{{ $runner['max_budget_usd'] ? '$'.$runner['max_budget_usd'] : 'no cap' }}</dd>
+            <dt class="text-zinc-500">attempts per task</dt><dd class="text-zinc-200">{{ $runner['max_attempts'] }}</dd>
+            <dt class="text-zinc-500">claim lease</dt><dd class="text-zinc-200">{{ $claims['lease_seconds'] }} s</dd>
+            <dt class="text-zinc-500">building stalls after</dt><dd class="text-zinc-200">{{ $claims['building_stall_minutes'] }} min without file changes</dd>
+            <dt class="text-zinc-500">workspaces from .env</dt><dd class="text-zinc-200">{{ implode(', ', $workspaces) ?: '—' }}</dd>
+        </dl>
+        <div>
+            <div class="rm-kicker mb-2">allowed tools</div>
+            <div class="flex flex-wrap gap-1.5">
+                @foreach ($runner['allowed_tools'] as $tool)
+                    <span class="rm-mono rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-300">{{ $tool }}</span>
+                @endforeach
+            </div>
         </div>
-    </flux:card>
+    </section>
 </div>

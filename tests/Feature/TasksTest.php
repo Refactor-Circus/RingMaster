@@ -7,6 +7,7 @@ use App\Actions\ScanWorkspaces;
 use App\Enums\TaskKind;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
+use App\Livewire\Board;
 use App\Livewire\ShowTask;
 use App\Livewire\Tasks;
 use App\Models\Project;
@@ -91,7 +92,8 @@ it('orders the queue by priority, then age, and shows it on the board', function
 
     expect(Task::query()->inQueueOrder()->pluck('title')->all())->toBe(['Urgent and new', 'Normal and old', 'Cancelled one']);
 
-    $this->get(route('board'))->assertSeeInOrder(['Queue', 'Urgent and new', 'Normal and old'])->assertDontSee('Cancelled one');
+    expect(Livewire::test(Board::class)->viewData('queue')->pluck('title')->all())->toBe(['Urgent and new', 'Normal and old']);
+    $this->get(route('board'))->assertSeeInOrder(['Queue', 'Urgent and new', 'Normal and old']);
     $this->get(route('tasks'))->assertSee('Normal and old')->assertDontSee('Cancelled one');
     $this->get(route('tasks', ['show' => 'done']))->assertSee('Cancelled one');
 });

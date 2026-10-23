@@ -3,8 +3,12 @@
 namespace App\Livewire;
 
 use App\Actions\ScanWorkspaces;
+use App\Enums\AttentionStatus;
+use App\Enums\RunStatus;
 use App\Enums\TaskStatus;
+use App\Models\AttentionItem;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\Spec;
 use App\Models\Task;
 use Illuminate\Contracts\View\View;
@@ -54,7 +58,17 @@ class Board extends Component
             ->inQueueOrder()
             ->get();
 
+        $open = AttentionItem::query()->where('status', AttentionStatus::Open)->whereHas('spec.project.workspace', fn (Builder $query) => $query->where('enabled', true))->count();
+
         return view('livewire.board', [
+            'stats' => [
+                'queued' => $queue->count(),
+                'building' => $specs->get('Building', collect())->count(),
+                'needs' => $open,
+                'review' => $specs->get('In review', collect())->count(),
+                'live' => Run::query()->whereIn('status', [RunStatus::Running, RunStatus::Stopping])->count(),
+                'spent' => (float) Run::query()->where('started_at', '>=', now()->subDay())->sum('cost_usd'),
+            ],
             'queue' => $queue,
             'columns' => array_keys(RingsideBoard::COLUMNS),
             'specs' => $specs,
