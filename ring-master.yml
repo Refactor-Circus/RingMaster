@@ -1,0 +1,11 @@
+# ringside configuration. Every key is optional; only detected settings are written here.
+# Full schema and defaults: vendor/refactor-circus/ringside/README.md
+
+commands:
+  verify: 'composer test'
+  format: 'composer lint'
+  format_check: 'composer lint:check'
+tickets:
+  default: file
+  providers:
+    file: {}

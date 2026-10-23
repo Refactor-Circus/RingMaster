@@ -1,19 +1,21 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/blank-livewire-starter-kit",
+    "name": "refactor-circus/ring-master",
     "type": "project",
-    "description": "The official Laravel starter kit for Livewire.",
+    "description": "RingMaster: the board, task queue and inbox for Ring Master jobs across your workspaces.",
     "keywords": [
         "laravel",
         "framework"
     ],
     "license": "MIT",
     "require": {
-        "php": "^8.3",
+        "php": "^8.5",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
         "livewire/blaze": "^1.0",
-        "livewire/livewire": "^4.1"
+        "livewire/flux": "^2.21",
+        "livewire/livewire": "^4.1",
+        "refactor-circus/ringside": "*@dev"
     },
     "require-dev": {
         "fakerphp/faker": "^1.24",
@@ -104,9 +106,19 @@
         "sort-packages": true,
         "allow-plugins": {
             "pestphp/pest-plugin": true,
-            "php-http/discovery": true
+            "php-http/discovery": true,
+            "refactor-circus/ringside": true
         }
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../packages/Ringside",
+            "options": {
+                "symlink": true
+            }
+        }
+    ]
 }

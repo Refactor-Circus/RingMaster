@@ -1,50 +1,56 @@
 <?php
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Tests\TestCase;
-
-/*
-|--------------------------------------------------------------------------
-| Test Case
-|--------------------------------------------------------------------------
-|
-| The closure you provide to your test functions is always bound to a specific PHPUnit test
-| case class. By default, that class is "PHPUnit\Framework\TestCase". Of course, you may
-| need to change it using the "pest()" function to bind different classes or traits.
-|
-*/
 
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
 
-/*
-|--------------------------------------------------------------------------
-| Expectations
-|--------------------------------------------------------------------------
-|
-| When you're writing tests, you often need to check that values meet certain conditions. The
-| "expect()" function gives you access to a set of "expectations" methods that you can use
-| to assert different things. Of course, you may extend the Expectation API at any time.
-|
-*/
-
-expect()->extend('toBeOne', function () {
-    return $this->toBe(1);
-});
-
-/*
-|--------------------------------------------------------------------------
-| Functions
-|--------------------------------------------------------------------------
-|
-| While Pest is very powerful out-of-the-box, you may have some testing code specific to your
-| project that you don't want to repeat in every file. Here you can also expose helpers as
-| global functions to help you to reduce the number of lines of code in your test files.
-|
-*/
-
-function something()
+/**
+ * A temporary folder with the given files (path => contents). Removed after
+ * the test.
+ *
+ * @param  array<string, string>  $files
+ */
+function fixtureFolder(array $files): string
 {
-    // ..
+    $root = sys_get_temp_dir().'/ring-master-'.bin2hex(random_bytes(6));
+
+    foreach ($files as $path => $contents) {
+        File::ensureDirectoryExists(dirname($root.'/'.$path));
+        File::put($root.'/'.$path, $contents);
+    }
+
+    File::ensureDirectoryExists($root);
+    test()->beforeApplicationDestroyed(fn () => File::deleteDirectory($root));
+
+    return realpath($root) ?: $root;
+}
+
+/**
+ * A workspace like the Refactor Circus one: a ring-master.yml listing two
+ * packages, a spec that needs a decision in Alpha, and a folder that is not
+ * listed.
+ */
+function fixtureWorkspace(): string
+{
+    $spec = 'Alpha/docs/agent/specs/2026-10-23-1430-import';
+
+    return fixtureFolder([
+        'ring-master.yml' => "workspace:\n  packages: [Alpha, Beta]\n",
+        'composer.json' => '{"name": "acme/workspace"}',
+        'Alpha/composer.json' => '{"name": "acme/alpha"}',
+        "{$spec}/meta.yml" => "title: CSV import\nstatus: needs-decision\nticket: { provider: github, key: '#42', url: 'https://github.com/acme/alpha/issues/42' }\n",
+        "{$spec}/tasks.md" => "## Group 1: Data\n- [x] 1.1 Tests\n- [ ] 1.2 Data\n",
+        "{$spec}/spec.md" => "# CSV import\n\nImport <script>alert(1)</script> rows.\n",
+        "{$spec}/decision.md" => "# NEEDS-DECISION\n\n1. **One row per file or per line?**\n2. **Sync or queued?**\n",
+        "{$spec}/round-1/gate.md" => "VERDICT: PASS\n",
+        "{$spec}/round-1/review-code.md" => "VERDICT: CHANGES\n\n- off by one\n",
+        'Alpha/docs/agent/specs/2026-10-20-0900-older/meta.yml' => "title: Older\nstatus: closed\n",
+        'Alpha/secret.md' => "do not show\n",
+        'Beta/composer.json' => '{"name": "acme/beta"}',
+        'Gamma/composer.json' => '{"name": "acme/gamma"}',
+    ]);
 }

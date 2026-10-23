@@ -38,3 +38,9 @@ yarn-error.log
 /boost.json
 /opencode.json
 /opencode.jsonc
+
+# ringside generated files
+/docs/agent/standards.index.yml
+/docs/agent/standards.summary.md
+/.claude/skills/ring-master-*/
+/.claude/agents/ring-master-*.md

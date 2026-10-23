@@ -1,8 +1,27 @@
 @import 'tailwindcss';
+@import '../../vendor/livewire/flux/dist/flux.css';
 
 @source '../views';
+@source '../../vendor/livewire/flux/stubs/**/*.blade.php';
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+@layer base {
+    .prose-spec h1 { @apply text-xl font-semibold mt-2 mb-3; }
+    .prose-spec h2 { @apply text-lg font-semibold mt-6 mb-2; }
+    .prose-spec h3 { @apply font-semibold mt-4 mb-2; }
+    .prose-spec p, .prose-spec ul, .prose-spec ol, .prose-spec table, .prose-spec pre { @apply my-3; }
+    .prose-spec ul { @apply list-disc pl-6; }
+    .prose-spec ol { @apply list-decimal pl-6; }
+    .prose-spec code { @apply rounded bg-zinc-100 px-1 text-sm dark:bg-zinc-700; }
+    .prose-spec pre { @apply overflow-x-auto rounded-lg bg-zinc-100 p-3 text-sm dark:bg-zinc-900; }
+    .prose-spec pre code { @apply bg-transparent p-0; }
+    .prose-spec table { @apply block overflow-x-auto text-sm; }
+    .prose-spec th, .prose-spec td { @apply border border-zinc-200 px-2 py-1 text-left align-top dark:border-zinc-700; }
+    .prose-spec a { @apply underline; }
 }
