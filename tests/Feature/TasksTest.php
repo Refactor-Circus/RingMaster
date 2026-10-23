@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\ChangeTaskStatus;
+use App\Actions\ClaimTasks;
 use App\Actions\CreateTask;
 use App\Actions\ScanWorkspaces;
 use App\Enums\TaskKind;
@@ -62,14 +63,15 @@ it('starts a spec task linked, with the status its spec implies, and offers only
         ->call('create')
         ->assertHasNoErrors();
 
-    expect(Task::query()->sole())->spec_id->toBe($import->id)->status->toBe(TaskStatus::NeedsAttention);
+    expect(Task::query()->sole())->spec_id->toBe($import->id)->status->toBe(TaskStatus::Queued);
 
     Livewire::test(Tasks::class)->set('projectId', (string) $this->alpha->id)->set('kind', 'spec')->assertDontSee('CSV import (needs-decision)');
 });
 
 it('links a task to its spec once the spec appears, and follows the spec from then on', function () {
     $task = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
-    $task->update(['spec_key' => '2026-10-24-0900-exports']);
+    app(ClaimTasks::class)->claim($task->id, 'beta-1');
+    $task->update(['spec_key' => '2026-10-24-0900-exports']); // as link-spec records it
 
     rewriteFixture($this->root, 'Beta/docs/agent/specs/2026-10-24-0900-exports/meta.yml', "title: Exports\nstatus: building\n");
     app(ScanWorkspaces::class)->ifStale();
@@ -78,7 +80,7 @@ it('links a task to its spec once the spec appears, and follows the spec from th
     rewriteFixture($this->root, 'Beta/docs/agent/specs/2026-10-24-0900-exports/meta.yml', "title: Exports\nstatus: in-review\n");
     app(ScanWorkspaces::class)->ifStale();
     expect($task->fresh()->status)->toBe(TaskStatus::InReview)
-        ->and($task->fresh()->timeline()->pluck('message')->all())->toContain('Linked to spec 2026-10-24-0900-exports', 'Task Running → In review', 'Spec status building → in-review');
+        ->and($task->fresh()->timeline()->pluck('message')->all())->toContain('Linked to spec 2026-10-24-0900-exports', 'Task Claimed → Running', 'Task Running → In review', 'Spec status building → in-review');
 });
 
 it('orders the queue by priority, then age, and shows it on the board', function () {

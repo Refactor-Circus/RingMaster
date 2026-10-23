@@ -17,6 +17,7 @@ use App\Mcp\Tools\QueueStatus;
 use App\Mcp\Tools\ReleaseTask;
 use App\Models\AttentionItem;
 use App\Models\Project;
+use App\Models\Spec;
 use App\Models\Task;
 use Illuminate\Validation\ValidationException;
 
@@ -141,4 +142,39 @@ it('prints one line for a session, and nothing when there is nothing to do', fun
         ->assertSuccessful();
 
     $this->artisan('ring-master:summary', ['--project' => '/somewhere/else'])->doesntExpectOutputToContain('RingMaster')->assertSuccessful();
+});
+
+it('keeps a queued spec task queued until a session claims it', function () {
+    $import = Spec::query()->where('key', '2026-10-23-1430-import')->sole();
+    $task = app(CreateTask::class)->handle(Project::query()->where('folder', 'Alpha')->sole(), TaskKind::Spec, 'CSV import', spec: $import);
+    app(ScanWorkspaces::class)->handle();
+
+    expect($task->fresh()->status)->toBe(TaskStatus::Queued)
+        ->and(app(ClaimTasks::class)->next($this->root)?->id)->toBe($this->task->id);
+
+    app(ClaimTasks::class)->claim($task->id, 'alpha-1');
+    app(ScanWorkspaces::class)->handle();
+
+    expect($task->fresh()->status)->toBe(TaskStatus::NeedsAttention);
+});
+
+it('resumes a task whose session stopped while its spec was in an interactive stage, but not one that is building', function () {
+    $claims = app(ClaimTasks::class);
+    $claims->claim($this->task->id, 'beta-1');
+    rewriteFixture($this->root, 'Beta/docs/agent/specs/2026-10-24-0900-exports/meta.yml', "title: Exports\nstatus: shaping\n");
+    $claims->linkSpec($this->task->id, 'beta-1', '2026-10-24-0900-exports');
+
+    expect($claims->candidates(10)->pluck('id')->all())->toBe([]);
+
+    $this->travel(11)->minutes();
+
+    expect($claims->candidates(10)->pluck('id')->all())->toBe([$this->task->id])
+        ->and($claims->claim($this->task->id, 'runner-2')->claimed_by)->toBe('runner-2')
+        ->and($this->task->timeline()->pluck('message')->all())->toContain('Resumed by runner-2');
+
+    rewriteFixture($this->root, 'Beta/docs/agent/specs/2026-10-24-0900-exports/meta.yml', "title: Exports\nstatus: building\n");
+    app(ScanWorkspaces::class)->ifStale();
+    $this->travel(11)->minutes();
+
+    expect($claims->candidates(10)->pluck('id')->all())->toBe([]);
 });

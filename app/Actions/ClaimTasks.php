@@ -7,6 +7,7 @@ use App\Models\Activity;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -17,6 +18,13 @@ use Illuminate\Validation\ValidationException;
  */
 final class ClaimTasks
 {
+    /**
+     * Spec statuses a stalled task is resumed from: the interactive stages.
+     * A building spec is left alone, since its factory workflow can run
+     * longer than a lease without sending heartbeats.
+     */
+    public const array RESUMABLE = ['ticketed', 'shaping', 'written', 'approved'];
+
     public function __construct(private readonly ScanWorkspaces $scan) {}
 
     /**
@@ -31,9 +39,21 @@ final class ClaimTasks
             ->first();
     }
 
+    /**
+     * Claimable tasks across every enabled workspace, in pickup order.
+     *
+     * @return Collection<int, Task>
+     */
+    public function candidates(int $limit): Collection
+    {
+        return $this->claimable()->with('project')->inQueueOrder()->limit($limit)->get();
+    }
+
     public function claim(int $taskId, string $session): Task
     {
         return DB::transaction(function () use ($taskId, $session): Task {
+            $resumed = Task::query()->whereKey($taskId)->whereNotNull('spec_id')->exists();
+
             $claimed = $this->claimable()->whereKey($taskId)->update([
                 'status' => TaskStatus::Claimed,
                 'claimed_by' => $session,
@@ -46,7 +66,7 @@ final class ClaimTasks
             }
 
             $task = Task::query()->with('project')->findOrFail($taskId);
-            Activity::record('task.claimed', "Claimed by {$session}", $task);
+            Activity::record('task.claimed', ($resumed ? 'Resumed by ' : 'Claimed by ').$session, $task);
 
             return $task;
         });
@@ -127,7 +147,14 @@ final class ClaimTasks
             ->whereHas('project.workspace', fn (Builder $query) => $query->where('enabled', true))
             ->where(fn (Builder $query) => $query
                 ->where('status', TaskStatus::Queued)
-                ->orWhere(fn (Builder $query) => $query->where('status', TaskStatus::Claimed)->whereNull('spec_id')->where('lease_expires_at', '<', now())));
+                ->orWhere(fn (Builder $query) => $query->where('status', TaskStatus::Claimed)->whereNull('spec_id')->where('lease_expires_at', '<', now()))
+                // Stalled: a session took it, linked a spec in an interactive stage, then stopped sending heartbeats.
+                ->orWhere(fn (Builder $query) => $query
+                    ->whereIn('status', [TaskStatus::Running, TaskStatus::Claimed])
+                    ->whereNotNull('spec_id')
+                    ->whereNotNull('claimed_by')
+                    ->where('lease_expires_at', '<', now())
+                    ->whereHas('spec', fn (Builder $query) => $query->whereIn('status', self::RESUMABLE))));
     }
 
     private function held(int $taskId, string $session): Task

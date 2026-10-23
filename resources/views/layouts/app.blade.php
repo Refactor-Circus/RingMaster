@@ -15,6 +15,7 @@
                 <flux:navbar.item icon="view-columns" :href="route('board')" :current="request()->routeIs('board', 'specs.show')" wire:navigate>Board</flux:navbar.item>
                 <flux:navbar.item icon="inbox" :href="route('inbox')" :current="request()->routeIs('inbox')" :badge="$waitingOnYou ?: null" badge-color="amber" wire:navigate>Inbox</flux:navbar.item>
                 <flux:navbar.item icon="queue-list" :href="route('tasks')" :current="request()->routeIs('tasks', 'tasks.show')" wire:navigate>Tasks</flux:navbar.item>
+                <flux:navbar.item icon="play-circle" :href="route('runs')" :current="request()->routeIs('runs', 'runs.show')" wire:navigate>Runs</flux:navbar.item>
                 <flux:navbar.item icon="folder" :href="route('workspaces')" :current="request()->routeIs('workspaces')" wire:navigate>Workspaces</flux:navbar.item>
             </flux:navbar>
 

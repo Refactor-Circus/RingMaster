@@ -14,8 +14,8 @@ use Illuminate\Support\Facades\DB;
 final class CreateTask
 {
     /**
-     * A spec task starts linked to that spec; any other waits in the queue
-     * until Claude picks it up and a spec appears for it.
+     * Every task starts in the queue. A spec task is linked to its spec from
+     * the start; it follows the spec's status once a session claims it.
      */
     public function handle(Project $project, TaskKind $kind, string $title, ?string $body = null, ?string $ticketRef = null, ?Spec $spec = null, TaskPriority $priority = TaskPriority::Normal): Task
     {
@@ -29,7 +29,7 @@ final class CreateTask
                 'spec_id' => $spec?->id,
                 'spec_key' => $spec?->key,
                 'priority' => $priority,
-                'status' => $spec !== null ? (TaskStatus::fromSpec($spec->status) ?? TaskStatus::Queued) : TaskStatus::Queued,
+                'status' => TaskStatus::Queued,
             ]);
 
             Activity::record('task.created', "Queued {$kind->label()}: {$title}", $task);

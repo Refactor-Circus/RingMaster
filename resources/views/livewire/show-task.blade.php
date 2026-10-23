@@ -71,6 +71,19 @@
         </section>
     @endif
 
+    @if ($runs->isNotEmpty())
+        <section class="space-y-2">
+            <flux:heading size="lg">Runs</flux:heading>
+            @foreach ($runs as $run)
+                <div class="flex items-center gap-2 text-sm" wire:key="run-{{ $run->id }}">
+                    <flux:link :href="route('runs.show', $run)" wire:navigate>#{{ $run->id }}</flux:link>
+                    <flux:badge size="sm" :color="$run->status->color()">{{ $run->status->value }}</flux:badge>
+                    <flux:text size="sm">{{ $run->started_at?->diffForHumans() }}@if ($run->cost_usd !== null) · ${{ $run->cost_usd }}@endif</flux:text>
+                </div>
+            @endforeach
+        </section>
+    @endif
+
     <section class="space-y-3">
         <flux:heading size="lg">Timeline</flux:heading>
         <ol class="space-y-2 border-l border-zinc-200 pl-4 dark:border-zinc-700">

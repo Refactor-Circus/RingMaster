@@ -1,0 +1,25 @@
+#!/usr/bin/env php
+<?php
+
+// Stands in for `claude -p` in the runner tests. FAKE_CLAUDE_MODE picks the
+// behaviour; every call is appended to FAKE_CLAUDE_CALLS as JSON.
+
+$mode = getenv('FAKE_CLAUDE_MODE') ?: 'ok';
+file_put_contents((string) getenv('FAKE_CLAUDE_CALLS'), json_encode(['argv' => array_slice($argv, 1), 'cwd' => getcwd()])."\n", FILE_APPEND);
+
+$emit = fn (array $event) => print(json_encode($event)."\n");
+$emit(['type' => 'system', 'subtype' => 'init']);
+$emit(['type' => 'assistant', 'message' => ['content' => [['type' => 'text', 'text' => 'Working on it'], ['type' => 'tool_use', 'name' => 'Bash', 'input' => ['command' => 'composer test']]]]]);
+
+if ($mode === 'sleep') {
+    sleep(30);
+}
+
+if ($mode === 'spec') {
+    @mkdir(getcwd().'/docs/agent/specs/2026-10-25-0900-fake', 0o755, true);
+    file_put_contents(getcwd().'/docs/agent/specs/2026-10-25-0900-fake/meta.yml', "title: Fake\nstatus: building\n");
+}
+
+$emit(['type' => 'result', 'subtype' => 'success', 'is_error' => $mode === 'fail', 'result' => "Finished ({$mode})", 'total_cost_usd' => 0.0123]);
+
+exit($mode === 'fail' ? 1 : 0);

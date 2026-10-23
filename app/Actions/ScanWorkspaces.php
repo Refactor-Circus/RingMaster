@@ -212,7 +212,8 @@ final class ScanWorkspaces
                 }
             }
 
-            $spec = $task->spec_id === null ? null : Spec::query()->find($task->spec_id);
+            // A queued task waits for a session even when its spec exists already.
+            $spec = $task->spec_id === null || $task->status === TaskStatus::Queued ? null : Spec::query()->find($task->spec_id);
             $status = $spec === null ? null : TaskStatus::fromSpec($spec->status);
 
             if ($status !== null && $status !== $task->status) {

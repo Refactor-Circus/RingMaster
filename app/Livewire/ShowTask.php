@@ -82,6 +82,7 @@ class ShowTask extends Component
             'task' => $task,
             'items' => $task->spec?->attentionItems()->whereIn('status', [AttentionStatus::Open, AttentionStatus::Answered])->get() ?? collect(),
             'timeline' => $task->timeline()->limit(100)->get(),
+            'runs' => $task->runs()->latest('id')->get(),
         ])->title($task->title);
     }
 

@@ -30,12 +30,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $claimed_by
  * @property CarbonImmutable|null $claimed_at
  * @property CarbonImmutable|null $lease_expires_at
+ * @property int $attempts
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Project $project
  * @property-read Spec|null $spec
  */
-#[Fillable(['project_id', 'spec_id', 'spec_key', 'kind', 'title', 'body', 'ticket_ref', 'priority', 'status', 'claimed_by', 'claimed_at', 'lease_expires_at'])]
+#[Fillable(['project_id', 'spec_id', 'spec_key', 'kind', 'title', 'body', 'ticket_ref', 'priority', 'status', 'claimed_by', 'claimed_at', 'lease_expires_at', 'attempts'])]
 class Task extends Model
 {
     /**
@@ -52,6 +53,14 @@ class Task extends Model
     public function spec(): BelongsTo
     {
         return $this->belongsTo(Spec::class);
+    }
+
+    /**
+     * @return HasMany<Run, $this>
+     */
+    public function runs(): HasMany
+    {
+        return $this->hasMany(Run::class);
     }
 
     /**

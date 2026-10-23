@@ -7,6 +7,7 @@ use App\Models\AttentionItem;
 use App\Models\Spec;
 use App\Models\Task;
 use App\Models\Workspace;
+use App\Runner\Runner;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -36,5 +37,31 @@ Artisan::command('ring-master:summary {--project= : Only count work in this fold
         $queued, $open, $answered,
     ));
 })->purpose('One line for a Claude session: queued tasks, questions that need you, answers to apply');
+
+Artisan::command('ring-master:work {--once : Start what can start, wait for it to finish, then exit}', function (Runner $runner) {
+    $runner->recoverOrphans();
+    $this->info('RingMaster runner started'.(Runner::paused() ? ' (paused: resume it on the Runs page)' : '').'. Ctrl+C to stop.');
+
+    if ($this->option('once')) {
+        $runner->tick();
+        $runner->drain();
+
+        return;
+    }
+
+    if (function_exists('pcntl_async_signals')) {
+        pcntl_async_signals(true);
+        pcntl_signal(SIGINT, fn () => $runner->stop());
+        pcntl_signal(SIGTERM, fn () => $runner->stop());
+    }
+
+    do {
+        $runner->tick();
+        sleep(max(1, (int) config('ring-master.runner.tick_seconds', 5)));
+    } while (! $runner->stopping());
+
+    $this->info('Stopping: waiting for running sessions to finish.');
+    $runner->drain();
+})->purpose('Run headless Claude sessions for queued tasks and answers waiting to be applied');
 
 Schedule::command('ring-master:scan')->everyMinute()->withoutOverlapping();
