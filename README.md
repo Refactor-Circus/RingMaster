@@ -8,7 +8,7 @@ RingMaster is a local, single-user app. It reads your folders and never writes t
 
 ```bash
 composer setup                 # install, .env, key, migrate, build assets
-php artisan serve              # http://127.0.0.1:8000
+php artisan serve              # http://127.0.0.1:8000, or let Herd or Valet serve the folder
 ```
 
 Or `composer dev` for the server, queue, logs and Vite together. Keep it on 127.0.0.1: there is no login.
@@ -38,10 +38,10 @@ An open board rescans when the last scan is older than `RING_MASTER_SCAN_STALE_A
 RingMaster's MCP server runs locally over stdio; Claude Code starts it on demand, so the web server does not have to be running. Add it once:
 
 ```bash
-claude mcp add --scope user ring-master -- php ~/Projects/RingMaster/artisan mcp:start ring-master
+claude mcp add --scope user ring-master -- php ~/Herd/RingMaster/artisan mcp:start ring-master
 ```
 
-and point a project or workspace root at the app in its `ring-master.yml` (`board: { app: ~/Projects/RingMaster }`, Ringside 0.5+). Sessions there start with RingMaster's one-line summary, and `/ring-master-inbox` works through the queue:
+and point a project or workspace root at the app in its `ring-master.yml` (`board: { app: ~/Herd/RingMaster }`, Ringside 0.5+). Sessions there start with RingMaster's one-line summary, and `/ring-master-inbox` works through the queue:
 
 1. `pending-answers`: applies the answers you gave here, so stopped jobs resume.
 2. `next-task` and `claim-task`: claims the next task (highest priority, then oldest) and ships it, unattended: any question a stage would ask you lands in the inbox.

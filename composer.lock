@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c39702d80ceb05464bbe26d10879aa6d",
+    "content-hash": "bbe825ca58a0027bab401c83af147165",
     "packages": [
         {
             "name": "brick/math",
@@ -3476,8 +3476,8 @@
             "version": "dev-main",
             "dist": {
                 "type": "path",
-                "url": "../packages/Ringside",
-                "reference": "b13c12509f8f1381d70cd323f045687804966ce2"
+                "url": "../../Projects/packages/Ringside",
+                "reference": "18b10d0dda53298f939fdedd4500fae287a479ff"
             },
             "require": {
                 "composer-plugin-api": "^2.0",

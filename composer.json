@@ -115,7 +115,7 @@
     "repositories": [
         {
             "type": "path",
-            "url": "../packages/Ringside",
+            "url": "../../Projects/packages/Ringside",
             "options": {
                 "symlink": true
             }
