@@ -1,6 +1,6 @@
 # RingMaster
 
-The board for [Ring Master](../packages/docs/agent/product/ring-master.md) jobs: every spec across your workspaces in one place, read from the spec folders that [Ringside](https://github.com/Refactor-Circus/Ringside) writes. It also holds a task queue and an inbox for the questions that need you; the next phase adds the MCP server Claude picks work up from.
+The board for [Ring Master](../packages/docs/agent/product/ring-master.md) jobs: every spec across your workspaces in one place, read from the spec folders that [Ringside](https://github.com/Refactor-Circus/Ringside) writes. It also holds a task queue and an inbox for the questions that need you, and an MCP server Claude sessions pick work up from.
 
 RingMaster is a local, single-user app. It reads your folders and never writes to them; spec folders stay the source of truth, and the database mirrors them.
 
@@ -32,6 +32,22 @@ An open board rescans when the last scan is older than `RING_MASTER_SCAN_STALE_A
 - **Tasks**: queue an idea, an existing ticket or an existing spec for a project, with a priority. Claude picks up the highest priority first, then the oldest. A task follows its spec's status once the spec exists, and its page shows its timeline and anything it waits on you for.
 - **Spec**: the spec folder's documents and every round's report, rendered from markdown with raw HTML escaped. Only files inside the spec folder are readable.
 - **Workspaces**: add, disable or remove folders and see what each contributes. Folders from `.env` can only be disabled.
+
+## Claude
+
+RingMaster's MCP server runs locally over stdio; Claude Code starts it on demand, so the web server does not have to be running. Add it once:
+
+```bash
+claude mcp add --scope user ring-master -- php ~/Projects/RingMaster/artisan mcp:start ring-master
+```
+
+and point a project or workspace root at the app in its `ring-master.yml` (`board: { app: ~/Projects/RingMaster }`, Ringside 0.5+). Sessions there start with RingMaster's one-line summary, and `/ring-master-inbox` works through the queue:
+
+1. `pending-answers`: applies the answers you gave here, so stopped jobs resume.
+2. `next-task` and `claim-task`: claims the next task (highest priority, then oldest) and ships it, unattended: any question a stage would ask you lands in the inbox.
+3. `link-spec` once the spec folder exists, `heartbeat` at each stage, `release-task` when it cannot finish.
+
+A claim is a lease (`RING_MASTER_LEASE_SECONDS`, default 900) renewed by each heartbeat; if it runs out before a spec exists, the task goes back to the queue.
 
 ## Development
 
