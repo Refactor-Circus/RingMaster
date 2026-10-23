@@ -37,6 +37,8 @@ final class ScanWorkspaces
             $this->scan($workspace);
         }
 
+        app(ClaimTasks::class)->expire();
+
         Cache::forever(self::LAST_SCAN, now()->getTimestamp());
     }
 

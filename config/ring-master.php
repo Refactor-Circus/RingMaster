@@ -37,4 +37,21 @@ return [
         'stale_after' => (int) env('RING_MASTER_SCAN_STALE_AFTER', 3),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Claims
+    |--------------------------------------------------------------------------
+    |
+    | A Claude session that claims a task holds it for lease_seconds and
+    | renews the lease with each heartbeat. A lease that runs out before a
+    | spec exists puts the task back in the queue, so a session that dies
+    | never strands work. Once the task has a spec, its status follows the
+    | spec instead.
+    |
+    */
+
+    'claims' => [
+        'lease_seconds' => (int) env('RING_MASTER_LEASE_SECONDS', 900),
+    ],
+
 ];

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -47,6 +48,26 @@ class Project extends Model
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class);
+    }
+
+    /**
+     * Projects at a path or inside it: a session in a workspace root sees
+     * every package in it. No path means every project.
+     *
+     * @param  Builder<Project>  $query
+     */
+    public function scopeWithin(Builder $query, ?string $path): void
+    {
+        if ($path === null || $path === '') {
+            return;
+        }
+
+        $path = rtrim(realpath($path) ?: $path, '/');
+
+        // "!" escapes LIKE wildcards in folder names on every database driver.
+        $like = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $path).'/%';
+
+        $query->where(fn (Builder $query) => $query->where('path', $path)->orWhereRaw("path like ? escape '!'", [$like]));
     }
 
     public function ringside(): RingsideProject
