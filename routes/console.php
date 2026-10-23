@@ -21,11 +21,11 @@ Artisan::command('ring-master:summary {--project= : Only count work in this fold
     $scan->ifStale();
 
     $project = $this->option('project');
-    $within = fn (Builder $query) => $query->within(is_string($project) ? $project : null);
+    $path = is_string($project) ? $project : null;
 
-    $queued = Task::query()->where('status', TaskStatus::Queued)->whereHas('project', $within)->count();
-    $open = AttentionItem::query()->where('status', AttentionStatus::Open)->whereHas('spec.project', $within)->count();
-    $answered = AttentionItem::query()->where('status', AttentionStatus::Answered)->whereHas('spec.project', $within)->count();
+    $queued = Task::query()->where('status', TaskStatus::Queued)->whereHas('project', fn (Builder $query) => $query->within($path))->count();
+    $open = AttentionItem::query()->where('status', AttentionStatus::Open)->whereHas('spec.project', fn (Builder $query) => $query->within($path))->count();
+    $answered = AttentionItem::query()->where('status', AttentionStatus::Answered)->whereHas('spec.project', fn (Builder $query) => $query->within($path))->count();
 
     if ($queued + $open + $answered === 0) {
         return;
