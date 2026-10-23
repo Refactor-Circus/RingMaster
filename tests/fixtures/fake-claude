@@ -5,7 +5,7 @@
 // behaviour; every call is appended to FAKE_CLAUDE_CALLS as JSON.
 
 $mode = getenv('FAKE_CLAUDE_MODE') ?: 'ok';
-file_put_contents((string) getenv('FAKE_CLAUDE_CALLS'), json_encode(['argv' => array_slice($argv, 1), 'cwd' => getcwd()])."\n", FILE_APPEND);
+file_put_contents((string) getenv('FAKE_CLAUDE_CALLS'), json_encode(['argv' => array_slice($argv, 1), 'cwd' => getcwd(), 'sid' => function_exists('posix_getsid') ? posix_getsid(0) : null])."\n", FILE_APPEND);
 
 $emit = fn (array $event) => print(json_encode($event)."\n");
 $emit(['type' => 'system', 'subtype' => 'init']);

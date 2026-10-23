@@ -19,6 +19,7 @@ use App\Models\AttentionItem;
 use App\Models\Project;
 use App\Models\Spec;
 use App\Models\Task;
+use App\Support\JobActivity;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
@@ -177,4 +178,30 @@ it('resumes a task whose session stopped while its spec was in an interactive st
     $this->travel(11)->minutes();
 
     expect($claims->candidates(10)->pluck('id')->all())->toBe([]);
+});
+
+it('resumes a building job only once its spec folder and worktree have been quiet for the stall window', function () {
+    config(['ring-master.claims.building_stall_minutes' => 60]);
+    $claims = app(ClaimTasks::class);
+    $claims->claim($this->task->id, 'beta-1');
+    rewriteFixture($this->root, 'Beta/docs/agent/specs/2026-10-24-0900-exports/meta.yml', "title: Exports\nstatus: building\n");
+    $claims->linkSpec($this->task->id, 'beta-1', '2026-10-24-0900-exports');
+
+    $this->travel(30)->minutes();
+    expect($claims->candidates(10)->pluck('id')->all())->toBe([]);
+
+    $this->travel(31)->minutes();
+    expect($claims->candidates(10)->pluck('id')->all())->toBe([$this->task->id]);
+});
+
+it('reads a building job\'s activity from its worktree, skipping vendor', function () {
+    $root = $this->root;
+    rewriteFixture($root, 'Beta/docs/agent/specs/2026-10-24-0900-exports/meta.yml', "title: Exports\nstatus: building\n");
+    rewriteFixture($root, 'Beta/docs/agent/specs/2026-10-24-0900-exports/tasks.md', "## Group 1: Data\n- [ ] 1.1 Tests\n");
+    rewriteFixture($root, 'Beta--2026-10-24-0900-exports/src/Export.php', "<?php\n");
+    rewriteFixture($root, 'Beta--2026-10-24-0900-exports/vendor/lib.php', "<?php\n");
+    touch($root.'/Beta--2026-10-24-0900-exports/src/Export.php', 1_700_000_000);
+    touch($root.'/Beta--2026-10-24-0900-exports/vendor/lib.php', 1_800_000_000);
+
+    expect(app(JobActivity::class)->latest(new RefactorCircus\Ringside\Project($root.'/Beta'), '2026-10-24-0900-exports'))->toBeGreaterThanOrEqual(1_700_000_000)->toBeLessThan(1_800_000_000);
 });

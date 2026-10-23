@@ -21,6 +21,10 @@
 
             <flux:spacer />
 
+            <flux:navbar class="-mb-px">
+                <flux:navbar.item icon="cog-6-tooth" :href="route('settings')" :current="request()->routeIs('settings')" wire:navigate aria-label="Settings" />
+            </flux:navbar>
+
             <flux:radio.group x-data variant="segmented" x-model="$flux.appearance" size="sm">
                 <flux:radio value="light" icon="sun" aria-label="Light" />
                 <flux:radio value="dark" icon="moon" aria-label="Dark" />
@@ -31,6 +35,8 @@
         <flux:main container>
             {{ $slot }}
         </flux:main>
+
+        <livewire:browser-notifier />
 
         @fluxScripts
     </body>

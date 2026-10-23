@@ -5,10 +5,12 @@ namespace App\Actions;
 use App\Enums\TaskStatus;
 use App\Models\Activity;
 use App\Models\Task;
+use App\Support\Notifier;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -19,13 +21,18 @@ use Illuminate\Validation\ValidationException;
 final class ClaimTasks
 {
     /**
-     * Spec statuses a stalled task is resumed from: the interactive stages.
-     * A building spec is left alone, since its factory workflow can run
-     * longer than a lease without sending heartbeats.
+     * Spec statuses a stalled task is resumed from once its lease ran out:
+     * the interactive stages. A building spec's factory workflow can run
+     * longer than a lease without heartbeats, so it counts as stalled only
+     * when neither its spec folder nor its worktree changed for
+     * claims.building_stall_minutes.
      */
     public const array RESUMABLE = ['ticketed', 'shaping', 'written', 'approved'];
 
-    public function __construct(private readonly ScanWorkspaces $scan) {}
+    /** Statuses whose stall is judged by file activity instead of heartbeats. */
+    public const array BUILDING = ['building', 'in-progress'];
+
+    public function __construct(private readonly ScanWorkspaces $scan, private readonly Notifier $notifier) {}
 
     /**
      * The task a session in this folder should do next, without claiming it.
@@ -114,7 +121,11 @@ final class ClaimTasks
             'lease_expires_at' => null,
         ]);
 
-        Activity::record('task.status', ($failed ? 'Failed: ' : 'Released: ').trim($reason), $task);
+        Activity::record($failed ? 'task.failed' : 'task.status', ($failed ? 'Failed: ' : 'Released: ').trim($reason), $task);
+
+        if ($failed) {
+            $this->notifier->send('A task failed', ["{$task->project->folder}: {$task->title}: ".Str::limit(trim($reason), 160)], "/tasks/{$task->id}");
+        }
 
         return $task;
     }
@@ -154,7 +165,11 @@ final class ClaimTasks
                     ->whereNotNull('spec_id')
                     ->whereNotNull('claimed_by')
                     ->where('lease_expires_at', '<', now())
-                    ->whereHas('spec', fn (Builder $query) => $query->whereIn('status', self::RESUMABLE))));
+                    ->whereHas('spec', fn (Builder $query) => $query
+                        ->whereIn('status', self::RESUMABLE)
+                        ->orWhere(fn (Builder $query) => $query
+                            ->whereIn('status', self::BUILDING)
+                            ->where('activity_at', '<', now()->subMinutes((int) config('ring-master.claims.building_stall_minutes', 60)))))));
     }
 
     private function held(int $taskId, string $session): Task

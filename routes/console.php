@@ -51,8 +51,21 @@ Artisan::command('ring-master:work {--once : Start what can start, wait for it t
 
     if (function_exists('pcntl_async_signals')) {
         pcntl_async_signals(true);
-        pcntl_signal(SIGINT, fn () => $runner->stop());
-        pcntl_signal(SIGTERM, fn () => $runner->stop());
+        // First Ctrl+C: start nothing new and let running sessions finish. Second: stop them too.
+        $interrupt = function () use ($runner): void {
+            if ($runner->stopping()) {
+                $this->warn('Stopping running sessions.');
+                $runner->terminateAll();
+
+                return;
+            }
+
+            $this->info('Finishing running sessions; press Ctrl+C again to stop them.');
+            $runner->stop();
+        };
+
+        pcntl_signal(SIGINT, $interrupt);
+        pcntl_signal(SIGTERM, $interrupt);
     }
 
     do {
@@ -60,7 +73,6 @@ Artisan::command('ring-master:work {--once : Start what can start, wait for it t
         sleep(max(1, (int) config('ring-master.runner.tick_seconds', 5)));
     } while (! $runner->stopping());
 
-    $this->info('Stopping: waiting for running sessions to finish.');
     $runner->drain();
 })->purpose('Run headless Claude sessions for queued tasks and answers waiting to be applied');
 

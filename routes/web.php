@@ -3,6 +3,7 @@
 use App\Livewire\Board;
 use App\Livewire\Inbox;
 use App\Livewire\Runs;
+use App\Livewire\Settings;
 use App\Livewire\ShowRun;
 use App\Livewire\ShowSpec;
 use App\Livewire\ShowTask;
@@ -18,3 +19,4 @@ Route::get('/specs/{spec}', ShowSpec::class)->name('specs.show');
 Route::get('/runs', Runs::class)->name('runs');
 Route::get('/runs/{run}', ShowRun::class)->name('runs.show');
 Route::get('/workspaces', Workspaces::class)->name('workspaces');
+Route::get('/settings', Settings::class)->name('settings');

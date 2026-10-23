@@ -56,6 +56,8 @@ A claim is a lease (`RING_MASTER_LEASE_SECONDS`, default 900) renewed by each he
 - Answers you gave here go first, so stopped jobs resume; then queued tasks, highest priority first, then oldest. A job whose session stopped while its spec was being shaped, written or approved is resumed too.
 - One session per folder tree at a time (a workspace root and its packages never run together), up to `RING_MASTER_RUNNER_CONCURRENCY` (default 1).
 - Each session may use only `runner.allowed_tools` in `config/ring-master.php`; anything else is denied at once instead of prompting, so a session never hangs. Questions a stage would ask you land in the Inbox.
+- A job whose factory build stopped part-way is resumed once neither its spec folder nor its worktree changed for `RING_MASTER_BUILDING_STALL_MINUTES` (default 60); the factory skips the task groups already done.
+- Sessions run in a process session of their own: Ctrl+C in the runner's terminal stops it from starting new ones and lets the running ones finish; a second Ctrl+C stops them too. A runner that restarts adopts sessions still running and settles them when they end.
 - A task gets `RING_MASTER_RUNNER_MAX_ATTEMPTS` tries (default 2) before it is marked failed. `RING_MASTER_RUNNER_MODEL` and `RING_MASTER_RUNNER_MAX_BUDGET_USD` set the model and a per-session cost cap.
 - The Runs page shows whether the runner is up, pauses and resumes it, stops a run, and shows each run's log and cost. `--once` starts what can start, waits for it, and exits; Ctrl+C lets running sessions finish.
 

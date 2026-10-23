@@ -177,3 +177,43 @@ it('shows the runner, its runs and a run\'s log', function () {
         ->assertSee('Bash composer test')
         ->assertSee('Finished (ok)');
 });
+
+it('starts each session in a process session of its own, out of reach of the runner\'s Ctrl+C', function () {
+    app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+
+    runOnce();
+
+    expect(fakeCalls($this->calls)[0]['sid'])->not->toBeNull()->not->toBe(posix_getsid(0));
+})->skip(! function_exists('posix_getsid'), 'needs posix');
+
+it('stops every session on a second Ctrl+C', function () {
+    putenv('FAKE_CLAUDE_MODE=sleep');
+    app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+    $runner = app(Runner::class);
+    $runner->tick();
+    $runner->stop();
+
+    $runner->terminateAll();
+    $runner->drain();
+
+    expect(Run::query()->sole()->status)->toBe(RunStatus::Stopped);
+});
+
+it('adopts a session a previous runner left running, and settles it when it ends', function () {
+    $task = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+    $task->update(['status' => TaskStatus::Claimed, 'claimed_by' => 'runner-old', 'attempts' => 1]);
+    $process = proc_open(['sleep', '1'], [], $pipes);
+    $run = Run::query()->create(['project_id' => $this->beta->id, 'task_id' => $task->id, 'kind' => RunKind::Task, 'session' => 'runner-old', 'status' => RunStatus::Running, 'pid' => proc_get_status($process)['pid'], 'log_path' => '', 'started_at' => now()]);
+
+    $runner = app(Runner::class);
+    $runner->recoverOrphans();
+
+    expect($runner->busy())->toBeTrue()->and($run->fresh()->status)->toBe(RunStatus::Running);
+
+    proc_close($process);
+    $runner->drain();
+
+    expect($runner->busy())->toBeFalse()
+        ->and($run->fresh()->status)->toBe(RunStatus::Failed)
+        ->and($task->fresh()->status)->toBe(TaskStatus::Queued);
+})->skip(! function_exists('posix_kill'), 'needs posix');

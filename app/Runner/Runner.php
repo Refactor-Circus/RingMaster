@@ -13,6 +13,7 @@ use App\Models\AttentionItem;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\Task;
+use App\Support\Notifier;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
@@ -33,11 +34,15 @@ final class Runner
     /** @var array<int, resource> run id => process */
     private array $processes = [];
 
+    /** @var array<int, int> run id => pid: live sessions a previous runner started */
+    private array $adopted = [];
+
     public function __construct(
         private readonly ClaimTasks $claims,
         private readonly ScanWorkspaces $scan,
         private readonly ClaudeCommand $command,
         private readonly RunLog $log,
+        private readonly Notifier $notifier,
     ) {}
 
     public static function paused(): bool
@@ -61,16 +66,38 @@ final class Runner
     }
 
     /**
-     * Runs left "running" by a runner that is gone: mark them failed and give
-     * their tasks back.
+     * Runs left "running" by a runner that is gone. A session that is still
+     * alive (sessions run in their own process session, so they outlive the
+     * runner) is adopted and watched until it ends; the rest are marked
+     * failed and their tasks given back.
      */
     public function recoverOrphans(): void
     {
         foreach (Run::query()->whereIn('status', [RunStatus::Running, RunStatus::Stopping])->get() as $run) {
-            if (! isset($this->processes[$run->id])) {
+            if (isset($this->processes[$run->id]) || isset($this->adopted[$run->id])) {
+                continue;
+            }
+
+            if ($run->pid !== null && self::pidAlive($run->pid)) {
+                $this->adopted[$run->id] = $run->pid;
+            } else {
                 $this->finish($run, null, 'The runner stopped while this run was going.');
             }
         }
+    }
+
+    /**
+     * Stops every session this runner watches (a second Ctrl+C).
+     */
+    public function terminateAll(): void
+    {
+        Run::query()->whereKey([...array_keys($this->processes), ...array_keys($this->adopted)])->where('status', RunStatus::Running)->update(['status' => RunStatus::Stopping]);
+        $this->stopRequested();
+    }
+
+    private static function pidAlive(int $pid): bool
+    {
+        return function_exists('posix_kill') && posix_kill($pid, 0);
     }
 
     public function tick(): void
@@ -88,7 +115,7 @@ final class Runner
 
         $limit = max(1, (int) config('ring-master.runner.concurrency', 1));
 
-        while (count($this->processes) < $limit && $this->startNext()) {
+        while (count($this->processes) + count($this->adopted) < $limit && $this->startNext()) {
             // keep starting until the limit is reached or nothing is left
         }
     }
@@ -110,7 +137,7 @@ final class Runner
 
     public function busy(): bool
     {
-        return $this->processes !== [];
+        return $this->processes !== [] || $this->adopted !== [];
     }
 
     /**
@@ -168,7 +195,7 @@ final class Runner
         $run->update(['log_path' => $log]);
 
         $process = proc_open(
-            $this->command->for($run),
+            self::detached($this->command->for($run)),
             [0 => ['file', '/dev/null', 'r'], 1 => ['file', $log, 'w'], 2 => ['file', $log.'.err', 'w']],
             $pipes,
             $project->path,
@@ -187,8 +214,33 @@ final class Runner
         Activity::record('run.started', $label, $task);
     }
 
+    /**
+     * Wraps the command so it runs in its own process session, where the
+     * runner's Ctrl+C can't reach it. Without posix and pcntl, as is.
+     *
+     * @param  list<string>  $command
+     * @return list<string>
+     */
+    private static function detached(array $command): array
+    {
+        return function_exists('posix_setsid') && function_exists('pcntl_exec')
+            ? [PHP_BINARY, resource_path('runner/detach.php'), ...$command]
+            : $command;
+    }
+
     private function reap(): void
     {
+        foreach ($this->adopted as $id => $pid) {
+            if (! self::pidAlive($pid)) {
+                unset($this->adopted[$id]);
+                $run = Run::query()->find($id);
+
+                if ($run !== null) {
+                    $this->finish($run, null, adopted: true);
+                }
+            }
+        }
+
         foreach ($this->processes as $id => $process) {
             $status = proc_get_status($process);
 
@@ -209,16 +261,23 @@ final class Runner
 
     private function stopRequested(): void
     {
-        foreach (Run::query()->whereKey(array_keys($this->processes))->where('status', RunStatus::Stopping)->pluck('id') as $id) {
-            proc_terminate($this->processes[$id]);
+        foreach (Run::query()->whereKey([...array_keys($this->processes), ...array_keys($this->adopted)])->where('status', RunStatus::Stopping)->pluck('id') as $id) {
+            if (isset($this->processes[$id])) {
+                proc_terminate($this->processes[$id]);
+            } elseif (function_exists('posix_kill')) {
+                posix_kill($this->adopted[$id], 15);
+            }
         }
     }
 
-    private function finish(Run $run, ?int $exitCode, ?string $reason = null): void
+    /**
+     * @param  bool  $adopted  a session a previous runner started: its exit code is unknown, so the log's result decides
+     */
+    private function finish(Run $run, ?int $exitCode, ?string $reason = null, bool $adopted = false): void
     {
         $result = $run->log_path === '' ? null : $this->log->result($run->log_path);
         $stopped = $run->status === RunStatus::Stopping;
-        $ok = ! $stopped && $reason === null && $exitCode === 0 && $result !== null && ! $result['is_error'];
+        $ok = ! $stopped && $reason === null && ($exitCode === 0 || $adopted) && $result !== null && ! $result['is_error'];
 
         $run->update([
             'status' => $stopped ? RunStatus::Stopped : ($ok ? RunStatus::Succeeded : RunStatus::Failed),
@@ -230,6 +289,10 @@ final class Runner
 
         $task = $run->task_id === null ? null : Task::query()->find($run->task_id);
         Activity::record('run.finished', "Run #{$run->id} {$run->status->value}".($run->cost_usd !== null ? " (\${$run->cost_usd})" : ''), $task);
+
+        if ($task === null && $run->kind === RunKind::Answers && $run->status === RunStatus::Failed) {
+            $this->notifier->send('Could not apply your answers', ["{$run->project->folder}: run #{$run->id} failed"], "/runs/{$run->id}");
+        }
 
         if ($task !== null) {
             // Pick up a spec the session created, so the task follows it instead of going back to the queue.
@@ -257,9 +320,13 @@ final class Runner
             'lease_expires_at' => null,
         ]);
 
-        Activity::record('task.status', $failed
+        Activity::record($failed ? 'task.failed' : 'task.status', $failed
             ? "Failed after {$task->attempts} attempt(s); see run #{$run->id}"
             : "Back in the queue: run #{$run->id} ended without a spec", $task);
+
+        if ($failed) {
+            $this->notifier->send('A task failed', ["{$task->project->folder}: {$task->title} (after {$task->attempts} attempts)"], "/tasks/{$task->id}");
+        }
     }
 
     /**

@@ -46,12 +46,15 @@ return [
     | renews the lease with each heartbeat. A lease that runs out before a
     | spec exists puts the task back in the queue, so a session that dies
     | never strands work. Once the task has a spec, its status follows the
-    | spec instead.
+    | spec instead. A building job (whose factory workflow sends no
+    | heartbeats) counts as stalled once neither its spec folder nor its
+    | worktree changed for building_stall_minutes, and is resumed.
     |
     */
 
     'claims' => [
         'lease_seconds' => (int) env('RING_MASTER_LEASE_SECONDS', 900),
+        'building_stall_minutes' => (int) env('RING_MASTER_BUILDING_STALL_MINUTES', 60),
     ],
 
     /*
@@ -71,6 +74,30 @@ return [
     | your own sessions with /ring-master-inbox.
     |
     */
+
+    'notifications' => [
+
+        /*
+        |----------------------------------------------------------------------
+        | Notifications
+        |----------------------------------------------------------------------
+        |
+        | Where RingMaster tells you something needs you: new questions or
+        | escalations, a task that failed after its attempts, answers a run
+        | could not apply. Channels (comma-separated, none by default):
+        | desktop (macOS osascript or Linux notify-send, on this machine),
+        | mail (to mail_to, through Laravel's mailer), and webhook (a JSON
+        | POST of {"text": ...} that Slack, Discord and ntfy accept). An open
+        | RingMaster tab can also show browser notifications; enable them on
+        | the Settings page.
+        |
+        */
+
+        'channels' => array_values(array_filter(array_map(trim(...), explode(',', (string) env('RING_MASTER_NOTIFY', ''))))),
+        'mail_to' => env('RING_MASTER_NOTIFY_MAIL'),
+        'webhook_url' => env('RING_MASTER_NOTIFY_WEBHOOK'),
+        'app_url' => env('RING_MASTER_URL', env('APP_URL', 'http://127.0.0.1:8000')),
+    ],
 
     'runner' => [
         'claude_bin' => env('RING_MASTER_CLAUDE_BIN', 'claude'),

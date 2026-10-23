@@ -30,11 +30,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $questions
  * @property list<string> $files
  * @property CarbonImmutable|null $spec_updated_at
+ * @property CarbonImmutable|null $activity_at last write to the spec folder or, while building, its worktree
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Project $project
  */
-#[Fillable(['project_id', 'key', 'dir', 'title', 'status', 'column', 'ticket', 'pr', 'branch', 'tasks_done', 'tasks_total', 'packages', 'rounds', 'decisions', 'decision', 'questions', 'files', 'spec_updated_at'])]
+#[Fillable(['project_id', 'key', 'dir', 'title', 'status', 'column', 'ticket', 'pr', 'branch', 'tasks_done', 'tasks_total', 'packages', 'rounds', 'decisions', 'decision', 'questions', 'files', 'spec_updated_at', 'activity_at'])]
 class Spec extends Model
 {
     /**
@@ -130,6 +131,7 @@ class Spec extends Model
             'rounds' => 'array',
             'files' => 'array',
             'spec_updated_at' => 'datetime',
+            'activity_at' => 'datetime',
         ];
     }
 }

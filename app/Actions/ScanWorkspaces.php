@@ -11,7 +11,10 @@ use App\Models\Project;
 use App\Models\Spec;
 use App\Models\Task;
 use App\Models\Workspace;
+use App\Support\JobActivity;
+use App\Support\Notifier;
 use App\Support\ProjectDiscovery;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -27,7 +30,10 @@ final class ScanWorkspaces
 {
     private const string LAST_SCAN = 'ring-master.last-scan';
 
-    public function __construct(private readonly ProjectDiscovery $discovery) {}
+    /** @var list<AttentionItem> raised by the scan in progress */
+    private array $raised = [];
+
+    public function __construct(private readonly ProjectDiscovery $discovery, private readonly Notifier $notifier, private readonly JobActivity $activity) {}
 
     public function handle(): void
     {
@@ -80,6 +86,8 @@ final class ScanWorkspaces
             $workspace->projects()->whereNotIn('id', $kept)->delete();
             $workspace->update(['error' => null, 'scanned_at' => now()]);
         });
+
+        $this->announce();
     }
 
     private function importSpecs(Project $project): void
@@ -109,7 +117,13 @@ final class ScanWorkspaces
                 'questions' => $spec['questions'],
                 'files' => $spec['files'],
                 'spec_updated_at' => $spec['updated'] > 0 ? Carbon::createFromTimestamp($spec['updated']) : null,
-            ])->save();
+            ]);
+
+            $updated = $spec['updated'] > 0 ? $spec['updated'] : null;
+            $worktree = in_array($model->status, ['building', 'in-progress'], true) ? $this->activity->latest($project->ringside(), $spec['id']) : null;
+            $latest = max($updated ?? 0, $worktree ?? 0);
+            $model->activity_at = $latest > 0 ? CarbonImmutable::createFromTimestamp($latest) : null;
+            $model->save();
 
             if ($previous !== null && $previous !== $model->status) {
                 Activity::record('spec.status', "Spec status {$previous} → {$model->status}", spec: $model);
@@ -188,10 +202,30 @@ final class ScanWorkspaces
         $item->save();
 
         if ($new) {
+            $this->raised[] = $item;
             Activity::record('attention.raised', ($item->kind === AttentionKind::Escalation ? 'Escalated: ' : 'Question: ').Str::limit($item->question, 120), spec: $spec);
         }
 
         return $item->id;
+    }
+
+    /**
+     * One notification for everything this scan found waiting on you.
+     */
+    private function announce(): void
+    {
+        $raised = $this->raised;
+        $this->raised = [];
+
+        if ($raised === []) {
+            return;
+        }
+
+        $count = count($raised);
+        $this->notifier->send(
+            $count === 1 ? '1 thing needs you' : "{$count} things need you",
+            array_map(fn (AttentionItem $item): string => $item->spec->project->folder.': '.Str::limit($item->question, 120), array_slice($raised, 0, 10)),
+        );
     }
 
     /**
