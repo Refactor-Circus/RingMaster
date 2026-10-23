@@ -163,6 +163,12 @@
     .rm-tile:hover { border-color: rgb(255 255 255 / 0.18); background: rgb(255 255 255 / 0.04); }
     .rm-tile.is-on { border-color: color-mix(in oklab, var(--color-signal-1) 70%, transparent); background: color-mix(in oklab, var(--color-signal-1) 8%, transparent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-signal-1) 15%, transparent), 0 0 30px -10px var(--color-signal-1); }
 
+    /* Native selects: our own chevron, inset from the edge, with room for it. */
+    .rm-select { appearance: none; -webkit-appearance: none; padding-right: 2.25rem !important; cursor: pointer;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23a1a1aa'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.39a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06Z' clip-rule='evenodd'/%3E%3C/svg%3E");
+        background-repeat: no-repeat; background-position: right 0.75rem center; background-size: 1rem; }
+    .rm-select option { background: var(--color-deep); color: rgb(228 228 231); }
+
     /* Rail navigation. */
     .rm-rail-link { position: relative; display: flex; align-items: center; gap: 0.75rem; border-radius: 0.75rem; padding: 0.55rem 0.7rem; color: rgb(161 161 170); transition: color .2s, background .2s; }
     .rm-rail-link:hover { color: white; background: rgb(255 255 255 / 0.04); }

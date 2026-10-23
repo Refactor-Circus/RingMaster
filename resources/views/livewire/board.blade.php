@@ -27,7 +27,7 @@
                     <flux:icon name="magnifying-glass" variant="micro" class="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-zinc-500" />
                     <input wire:model.live.debounce.300ms="search" placeholder="Filter jobs" class="rm-panel w-52 rounded-xl py-2 pl-9 pr-3 text-sm text-white placeholder:text-zinc-500 focus:border-cyan-400/50 focus:outline-none">
                 </div>
-                <select wire:model.live="project" class="rm-panel rm-mono rounded-xl px-3 py-2 text-xs text-zinc-200 focus:border-cyan-400/50 focus:outline-none">
+                <select wire:model.live="project" class="rm-panel rm-select rm-mono rounded-xl px-3 py-2 text-xs text-zinc-200 focus:border-cyan-400/50 focus:outline-none">
                     <option value="">All projects</option>
                     @foreach ($projects as $option)
                         <option value="{{ $option->id }}">{{ $option->folder }}</option>

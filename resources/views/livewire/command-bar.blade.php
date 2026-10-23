@@ -35,7 +35,7 @@
                         </button>
                         <div class="flex items-center gap-2 px-3 pb-2" x-on:click.stop>
                             <span class="rm-kicker">into</span>
-                            <select wire:model="projectId" class="rm-mono rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-xs text-zinc-200 focus:border-cyan-400/60 focus:outline-none">
+                            <select wire:model="projectId" class="rm-select rm-mono rounded-lg border border-white/10 bg-black/40 py-1 pl-2.5 text-xs text-zinc-200 focus:border-cyan-400/60 focus:outline-none">
                                 @foreach ($projects as $project)
                                     <option value="{{ $project->id }}">{{ $project->folder }}{{ $project->is_workspace ? ' (workspace)' : '' }}</option>
                                 @endforeach
