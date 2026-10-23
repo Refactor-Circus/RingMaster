@@ -2,9 +2,12 @@
 
 namespace App\Providers;
 
+use App\Enums\AttentionStatus;
+use App\Models\AttentionItem;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
@@ -24,6 +27,13 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        View::composer(['layouts.app', 'layouts::app'], function (\Illuminate\View\View $view): void {
+            $view->with('waitingOnYou', AttentionItem::query()
+                ->where('status', AttentionStatus::Open)
+                ->whereHas('spec.project.workspace', fn ($query) => $query->where('enabled', true))
+                ->count());
+        });
     }
 
     /**

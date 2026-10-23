@@ -25,6 +25,28 @@
     @endif
 
     <div class="flex gap-4 overflow-x-auto pb-4">
+        <section class="flex w-72 shrink-0 flex-col gap-3" data-column="Queue">
+            <div class="flex items-center justify-between px-1">
+                <flux:heading size="sm">Queue</flux:heading>
+                <flux:badge size="sm">{{ $queue->count() }}</flux:badge>
+            </div>
+
+            @forelse ($queue as $task)
+                <a href="{{ route('tasks.show', $task) }}" wire:navigate wire:key="task-{{ $task->id }}" class="block">
+                    <flux:card size="sm" class="space-y-2 hover:bg-zinc-50 dark:hover:bg-zinc-700/50">
+                        <flux:heading class="leading-snug">{{ $task->title }}</flux:heading>
+                        <flux:text size="sm">{{ $task->project->folder }} · {{ $task->kind->label() }}@if ($task->ticket_ref) · {{ $task->ticket_ref }}@endif</flux:text>
+                        <div class="flex gap-1">
+                            <flux:badge size="sm" :color="$task->status->color()">{{ $task->status->label() }}</flux:badge>
+                            <flux:badge size="sm" :color="$task->priority->color()">{{ $task->priority->label() }}</flux:badge>
+                        </div>
+                    </flux:card>
+                </a>
+            @empty
+                <a href="{{ route('tasks') }}" wire:navigate class="block rounded-lg border border-dashed border-zinc-200 p-4 text-center text-sm text-zinc-400 hover:text-zinc-600 dark:border-zinc-700">Queue a task</a>
+            @endforelse
+        </section>
+
         @foreach ($columns as $column)
             @php($cards = $specs->get($column, collect()))
 

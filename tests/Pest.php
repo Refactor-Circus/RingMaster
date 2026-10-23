@@ -46,6 +46,7 @@ function fixtureWorkspace(): string
         "{$spec}/tasks.md" => "## Group 1: Data\n- [x] 1.1 Tests\n- [ ] 1.2 Data\n",
         "{$spec}/spec.md" => "# CSV import\n\nImport <script>alert(1)</script> rows.\n",
         "{$spec}/decision.md" => "# NEEDS-DECISION\n\n1. **One row per file or per line?**\n2. **Sync or queued?**\n",
+        "{$spec}/questions.yml" => "- id: Q-001\n  question: One row per file or per line?\n  options: [Per file, Per line]\n  recommendation: Per line\n  evidence: src/Import.php:40\n  source: build\n- id: Q-002\n  question: Sync or queued?\n  options: [Sync, Queued]\n  recommendation: Queued\n  source: spec-review\n",
         "{$spec}/round-1/gate.md" => "VERDICT: PASS\n",
         "{$spec}/round-1/review-code.md" => "VERDICT: CHANGES\n\n- off by one\n",
         'Alpha/docs/agent/specs/2026-10-20-0900-older/meta.yml' => "title: Older\nstatus: closed\n",
@@ -53,4 +54,19 @@ function fixtureWorkspace(): string
         'Beta/composer.json' => '{"name": "acme/beta"}',
         'Gamma/composer.json' => '{"name": "acme/gamma"}',
     ]);
+}
+
+/**
+ * Rewrites a file in a fixture folder and makes the next ifStale() rescan.
+ */
+function rewriteFixture(string $root, string $path, ?string $contents): void
+{
+    if ($contents === null) {
+        File::delete($root.'/'.$path);
+    } else {
+        File::ensureDirectoryExists(dirname($root.'/'.$path));
+        File::put($root.'/'.$path, $contents);
+    }
+
+    test()->travel(10)->seconds();
 }

@@ -2,13 +2,20 @@
 
 namespace App\Actions;
 
+use App\Enums\AttentionKind;
+use App\Enums\AttentionStatus;
+use App\Enums\TaskStatus;
+use App\Models\Activity;
+use App\Models\AttentionItem;
 use App\Models\Project;
 use App\Models\Spec;
+use App\Models\Task;
 use App\Models\Workspace;
 use App\Support\ProjectDiscovery;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use RefactorCircus\Ringside\Specs\Board;
 
 /**
@@ -80,7 +87,10 @@ final class ScanWorkspaces
         $keys = [];
 
         foreach ($board['specs'] as $spec) {
-            Spec::query()->updateOrCreate(['project_id' => $project->id, 'key' => $spec['id']], [
+            $model = Spec::query()->firstOrNew(['project_id' => $project->id, 'key' => $spec['id']]);
+            $previous = $model->exists ? $model->status : null;
+
+            $model->fill([
                 'dir' => $spec['dir'],
                 'title' => $spec['title'],
                 'status' => $spec['status'],
@@ -97,11 +107,117 @@ final class ScanWorkspaces
                 'questions' => $spec['questions'],
                 'files' => $spec['files'],
                 'spec_updated_at' => $spec['updated'] > 0 ? Carbon::createFromTimestamp($spec['updated']) : null,
-            ]);
+            ])->save();
+
+            if ($previous !== null && $previous !== $model->status) {
+                Activity::record('spec.status', "Spec status {$previous} → {$model->status}", spec: $model);
+            }
+
+            $this->importAttention($model, $spec);
             $keys[] = $spec['id'];
         }
 
         $project->specs()->whereNotIn('key', $keys)->delete();
+        $this->followSpecs($project);
+    }
+
+    /**
+     * Mirrors what the spec waits on you for. An item gone from the folder
+     * was dealt with: applied, if you answered it here; closed otherwise.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function importAttention(Spec $spec, array $data): void
+    {
+        $present = [];
+
+        if ($spec->status === 'needs-decision') {
+            /** @var list<array{id: string, question: string, options: list<string>, recommendation: ?string, evidence: ?string, source: string}> $questions */
+            $questions = $data['open_questions'] ?? [];
+
+            foreach ($questions as $question) {
+                $present[] = $this->upsertItem($spec, 'q:'.sha1(Str::lower($question['question'])), [
+                    'kind' => AttentionKind::Decision,
+                    'question' => $question['question'],
+                    'options' => $question['options'],
+                    'recommendation' => $question['recommendation'],
+                    'evidence' => $question['evidence'],
+                    'source' => $question['source'],
+                ]);
+            }
+        }
+
+        if ($spec->status === 'escalated') {
+            $present[] = $this->upsertItem($spec, 'escalation:'.count($spec->rounds), [
+                'kind' => AttentionKind::Escalation,
+                'question' => 'The factory escalated this job. Accept it as it stands, or send it back with a note?',
+                'options' => [AttentionKind::APPROVE, AttentionKind::REWORK],
+                'recommendation' => null,
+                'evidence' => Str::limit(trim((string) $spec->project->ringside()->read($spec->dir.'/decision.md')), 2000),
+                'source' => 'build',
+            ]);
+        }
+
+        $gone = $spec->attentionItems()->whereNotIn('id', $present)->whereIn('status', [AttentionStatus::Open, AttentionStatus::Answered])->get();
+
+        foreach ($gone as $item) {
+            $answered = $item->status === AttentionStatus::Answered;
+            $item->update($answered
+                ? ['status' => AttentionStatus::Applied, 'applied_at' => now()]
+                : ['status' => AttentionStatus::Closed, 'closed_at' => now()]);
+
+            Activity::record($answered ? 'attention.applied' : 'attention.closed', ($answered ? 'Applied: ' : 'Answered in a session: ').Str::limit($item->question, 120), spec: $spec);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function upsertItem(Spec $spec, string $key, array $attributes): int
+    {
+        $item = AttentionItem::query()->firstOrNew(['spec_id' => $spec->id, 'key' => $key]);
+        $new = ! $item->exists;
+        $item->fill($attributes);
+
+        if ($new) {
+            $item->status = AttentionStatus::Open;
+        }
+
+        $item->save();
+
+        if ($new) {
+            Activity::record('attention.raised', ($item->kind === AttentionKind::Escalation ? 'Escalated: ' : 'Question: ').Str::limit($item->question, 120), spec: $spec);
+        }
+
+        return $item->id;
+    }
+
+    /**
+     * Links tasks to the spec they name once it exists, and keeps each
+     * linked task's status in step with its spec's.
+     */
+    private function followSpecs(Project $project): void
+    {
+        $tasks = $project->tasks()->whereIn('status', TaskStatus::open())->get();
+
+        foreach ($tasks as $task) {
+            if ($task->spec_id === null && $task->spec_key !== null) {
+                $spec = $project->specs()->where('key', $task->spec_key)->first();
+
+                if ($spec !== null) {
+                    $task->update(['spec_id' => $spec->id]);
+                    Activity::record('task.linked', "Linked to spec {$spec->key}", $task);
+                }
+            }
+
+            $spec = $task->spec_id === null ? null : Spec::query()->find($task->spec_id);
+            $status = $spec === null ? null : TaskStatus::fromSpec($spec->status);
+
+            if ($status !== null && $status !== $task->status) {
+                Activity::record('task.status', "Task {$task->status->label()} → {$status->label()}", $task);
+                $task->update(['status' => $status]);
+            }
+        }
     }
 
     private function seedFromConfig(): void

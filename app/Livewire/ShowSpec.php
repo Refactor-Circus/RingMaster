@@ -3,10 +3,12 @@
 namespace App\Livewire;
 
 use App\Actions\ScanWorkspaces;
+use App\Enums\AttentionStatus;
 use App\Models\Spec;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use RefactorCircus\Ringside\Specs\Board as RingsideBoard;
@@ -34,6 +36,9 @@ class ShowSpec extends Component
         $scan->ifStale();
     }
 
+    #[On('answered')]
+    public function answered(): void {}
+
     public function render(): View
     {
         $spec = Spec::query()->with('project')->find($this->specId);
@@ -46,6 +51,8 @@ class ShowSpec extends Component
 
         return view('livewire.show-spec', [
             'spec' => $spec,
+            'items' => $spec->attentionItems()->whereIn('status', [AttentionStatus::Open, AttentionStatus::Answered])->get(),
+            'tasks' => $spec->tasks()->latest()->get(),
             'contents' => $this->contents($spec),
             'markdown' => str_ends_with($this->file, '.md'),
         ])->title($spec->title);

@@ -13,6 +13,8 @@
 
             <flux:navbar class="-mb-px">
                 <flux:navbar.item icon="view-columns" :href="route('board')" :current="request()->routeIs('board', 'specs.show')" wire:navigate>Board</flux:navbar.item>
+                <flux:navbar.item icon="inbox" :href="route('inbox')" :current="request()->routeIs('inbox')" :badge="$waitingOnYou ?: null" badge-color="amber" wire:navigate>Inbox</flux:navbar.item>
+                <flux:navbar.item icon="queue-list" :href="route('tasks')" :current="request()->routeIs('tasks', 'tasks.show')" wire:navigate>Tasks</flux:navbar.item>
                 <flux:navbar.item icon="folder" :href="route('workspaces')" :current="request()->routeIs('workspaces')" wire:navigate>Workspaces</flux:navbar.item>
             </flux:navbar>
 

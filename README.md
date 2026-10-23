@@ -1,6 +1,6 @@
 # RingMaster
 
-The board for [Ring Master](../packages/docs/agent/product/ring-master.md) jobs: every spec across your workspaces in one place, read from the spec folders that [Ringside](https://github.com/Refactor-Circus/Ringside) writes. Later phases add a task queue, an inbox for the questions that need you, and an MCP server Claude picks work up from.
+The board for [Ring Master](../packages/docs/agent/product/ring-master.md) jobs: every spec across your workspaces in one place, read from the spec folders that [Ringside](https://github.com/Refactor-Circus/Ringside) writes. It also holds a task queue and an inbox for the questions that need you; the next phase adds the MCP server Claude picks work up from.
 
 RingMaster is a local, single-user app. It reads your folders and never writes to them; spec folders stay the source of truth, and the database mirrors them.
 
@@ -27,7 +27,9 @@ An open board rescans when the last scan is older than `RING_MASTER_SCAN_STALE_A
 
 ## Pages
 
-- **Board**: one card per spec in its stage column (Ticket, Spec, Building, Needs you, In review, Done), with ticket, task progress, the latest round's verdict per reviewer and open questions. Filter by project or title.
+- **Board**: queued tasks, then one card per spec in its stage column (Ticket, Spec, Building, Needs you, In review, Done), with ticket, task progress, the latest round's verdict per reviewer and open questions. Filter by project or title.
+- **Inbox**: every open architectural question (from the spec's `questions.yml`) and escalated job, with its options, the recommendation and the evidence. Answer here; the answer waits until Claude applies it to the spec folder, and can change until then. Once the question leaves the folder it shows as applied, or as answered in a session if you answered it there.
+- **Tasks**: queue an idea, an existing ticket or an existing spec for a project, with a priority. Claude picks up the highest priority first, then the oldest. A task follows its spec's status once the spec exists, and its page shows its timeline and anything it waits on you for.
 - **Spec**: the spec folder's documents and every round's report, rendered from markdown with raw HTML escaped. Only files inside the spec folder are readable.
 - **Workspaces**: add, disable or remove folders and see what each contributes. Folders from `.env` can only be disabled.
 

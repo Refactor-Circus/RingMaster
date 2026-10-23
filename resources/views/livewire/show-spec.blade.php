@@ -26,13 +26,27 @@
             @endif
         </div>
 
+        @foreach ($tasks as $task)
+            <flux:text size="sm">Task: <flux:link :href="route('tasks.show', $task)" wire:navigate>{{ $task->title }}</flux:link> ({{ $task->status->label() }})</flux:text>
+        @endforeach
+
         @if ($spec->questions > 0)
             <flux:callout icon="question-mark-circle" color="amber">
                 <flux:callout.heading>{{ $spec->questions }} {{ Str::plural('question', $spec->questions) }} waiting for you</flux:callout.heading>
-                <flux:callout.text>Answer them with /ring-master-decide in {{ $spec->project->folder }}; answering here comes with the inbox.</flux:callout.text>
+                @if ($items->isEmpty())
+                    <flux:callout.text>This spec lists them only in decision.md, so answer them with /ring-master-decide in {{ $spec->project->folder }}.</flux:callout.text>
+                @endif
             </flux:callout>
         @endif
     </div>
+
+    @if ($items->isNotEmpty())
+        <section class="space-y-3">
+            @foreach ($items as $item)
+                <livewire:answer-item :item="$item" :wire:key="'item-'.$item->id" />
+            @endforeach
+        </section>
+    @endif
 
     <div class="grid gap-6 lg:grid-cols-[16rem_1fr]">
         <nav class="space-y-4">
