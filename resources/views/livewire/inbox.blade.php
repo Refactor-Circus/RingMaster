@@ -7,8 +7,30 @@
         <div class="flex items-center gap-3">
             <span class="rm-dot rm-tone-wait {{ $open->isNotEmpty() ? 'rm-dot-ping' : '' }}"></span>
             <h2 class="text-sm font-medium text-white">Needs you</h2>
-            <span class="rm-mono text-xs text-zinc-500">{{ $open->flatten()->count() }}</span>
+            <span class="rm-mono text-xs text-zinc-500">{{ $open->flatten()->count() + $proposals->count() }}</span>
         </div>
+
+        @foreach ($proposals as $proposal)
+            <article class="rm-panel rm-tone-wait space-y-3 p-5" wire:key="proposal-{{ $proposal->id }}" data-proposal="{{ $proposal->id }}">
+                <div class="flex flex-wrap items-center gap-2">
+                    <x-rm.pill tone="wait" dot ping>proposed job</x-rm.pill>
+                    <span class="rm-mono text-xs text-zinc-500">{{ $proposal->project->folder }}</span>
+                    @foreach ($proposal->blocking as $waiter)
+                        <a href="{{ route('tasks.show', $waiter) }}" wire:navigate class="rm-mono ml-auto text-xs text-zinc-500 hover:text-cyan-300">#{{ $waiter->id }} waits on it</a>
+                    @endforeach
+                </div>
+                <a href="{{ route('tasks.show', $proposal) }}" wire:navigate class="block text-lg font-medium text-white hover:text-cyan-300">{{ $proposal->title }}</a>
+                <p class="whitespace-pre-line text-sm text-zinc-300">{{ $proposal->proposal_reason }}</p>
+                <details class="group">
+                    <summary class="rm-kicker cursor-pointer list-none hover:text-zinc-200">the task as written</summary>
+                    <pre class="rm-terminal mt-2 max-h-64 overflow-auto whitespace-pre-wrap p-4 text-zinc-300">{{ $proposal->body }}</pre>
+                </details>
+                <div class="flex flex-wrap gap-3">
+                    <flux:button wire:click="acceptProposal({{ $proposal->id }})" size="sm" icon="check" variant="primary">Accept and queue</flux:button>
+                    <flux:button wire:click="declineProposal({{ $proposal->id }})" wire:confirm="Decline this job? A task waiting on it stays paused until you resume it." size="sm" variant="danger">Decline</flux:button>
+                </div>
+            </article>
+        @endforeach
 
         @forelse ($open as $items)
             @php($spec = $items->first()->spec)
@@ -22,7 +44,9 @@
                 @endforeach
             </div>
         @empty
+            @if ($proposals->isEmpty())
             <x-rm.empty icon="check-circle">Nothing is waiting on you. Agents are free to work.</x-rm.empty>
+            @endif
         @endforelse
     </section>
 

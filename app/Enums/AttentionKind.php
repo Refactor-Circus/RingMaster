@@ -13,4 +13,7 @@ enum AttentionKind: string
     public const string APPROVE = 'Approve as is';
 
     public const string REWORK = 'Send back with a note';
+
+    /** Failing PR checks only: leave the job in review as it is. */
+    public const string LEAVE = 'Leave it in review';
 }

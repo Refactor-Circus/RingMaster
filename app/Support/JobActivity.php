@@ -8,8 +8,10 @@ use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RefactorCircus\Ringside\Project;
 use RefactorCircus\Ringside\Specs\Job;
+use RuntimeException;
 use SplFileInfo;
 use Throwable;
+use UnexpectedValueException;
 
 /**
  * When a building job last touched its worktree: the newest file outside
@@ -47,14 +49,23 @@ final class JobActivity
             fn (SplFileInfo $file): bool => ! in_array($file->getFilename(), self::SKIP, true),
         ));
 
-        foreach ($files as $file) {
-            if ($file instanceof SplFileInfo) {
-                $latest = max($latest ?? 0, $file->getMTime());
-            }
+        // A running build creates and deletes files (tool caches) while this walks the tree; skip what vanished.
+        try {
+            foreach ($files as $file) {
+                try {
+                    if ($file instanceof SplFileInfo) {
+                        $latest = max($latest ?? 0, $file->getMTime());
+                    }
+                } catch (RuntimeException) {
+                    // deleted after it was listed
+                }
 
-            if (++$seen >= self::MAX_FILES) {
-                break;
+                if (++$seen >= self::MAX_FILES) {
+                    break;
+                }
             }
+        } catch (UnexpectedValueException) {
+            // a directory went away mid-walk; what was seen still counts
         }
 
         foreach (glob($root.'{,/*}/.git', GLOB_BRACE) ?: [] as $marker) {
@@ -76,7 +87,7 @@ final class JobActivity
 
         foreach (['index', 'logs/HEAD', 'HEAD'] as $file) {
             if (is_file($gitDir.'/'.$file)) {
-                $times[] = (int) filemtime($gitDir.'/'.$file);
+                $times[] = (int) @filemtime($gitDir.'/'.$file);
             }
         }
 

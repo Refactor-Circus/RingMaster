@@ -58,7 +58,8 @@ class Board extends Component
             ->inQueueOrder()
             ->get();
 
-        $open = AttentionItem::query()->where('status', AttentionStatus::Open)->whereHas('spec.project.workspace', fn (Builder $query) => $query->where('enabled', true))->count();
+        $open = AttentionItem::query()->where('status', AttentionStatus::Open)->whereHas('spec.project.workspace', fn (Builder $query) => $query->where('enabled', true))->count()
+            + Task::query()->where('status', TaskStatus::Proposed)->count();
 
         return view('livewire.board', [
             'stats' => [

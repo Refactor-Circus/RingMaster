@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\AnswerAttentionItem;
+use App\Actions\ChangeTaskStatus;
 use App\Actions\ClaimTasks;
 use App\Actions\CreateTask;
 use App\Actions\ScanWorkspaces;
@@ -204,4 +205,44 @@ it('reads a building job\'s activity from its worktree, skipping vendor', functi
     touch($root.'/Beta--2026-10-24-0900-exports/vendor/lib.php', 1_800_000_000);
 
     expect(app(JobActivity::class)->latest(new RefactorCircus\Ringside\Project($root.'/Beta'), '2026-10-24-0900-exports'))->toBeGreaterThanOrEqual(1_700_000_000)->toBeLessThan(1_800_000_000);
+});
+
+it('skips a worktree file that vanishes while the activity scan reads it', function () {
+    $root = $this->root;
+    rewriteFixture($root, 'Beta/docs/agent/specs/2026-10-24-0900-exports/meta.yml', "title: Exports\nstatus: building\n");
+    rewriteFixture($root, 'Beta--2026-10-24-0900-exports/src/Export.php', "<?php\n");
+    touch($root.'/Beta--2026-10-24-0900-exports/src/Export.php', 1_700_000_000);
+    // A dangling link lists like a file, then fails stat, as a deleted cache file does.
+    symlink($root.'/gone.tmp', $root.'/Beta--2026-10-24-0900-exports/src/cache.tmp');
+
+    expect(app(JobActivity::class)->latest(new RefactorCircus\Ringside\Project($root.'/Beta'), '2026-10-24-0900-exports'))->toBeGreaterThanOrEqual(1_700_000_000);
+});
+
+it('pauses a task with a spec when its session hands it back, and picks it up again once you resume it', function () {
+    $claims = app(ClaimTasks::class);
+    $claims->claim($this->task->id, 'beta-1');
+    rewriteFixture($this->root, 'Beta/docs/agent/specs/2026-10-24-0900-exports/meta.yml', "title: Exports\nstatus: building\n");
+    $claims->linkSpec($this->task->id, 'beta-1', '2026-10-24-0900-exports');
+    $claims->release($this->task->id, 'beta-1', 'Subagents could not run Bash');
+
+    expect($this->task->fresh())->status->toBe(TaskStatus::Running)->claimed_by->toBeNull()->isPaused()->toBeTrue()
+        ->pause_reason->toBe('Subagents could not run Bash')
+        ->and($this->task->timeline()->pluck('message')->first())->toBe('Paused: Subagents could not run Bash');
+
+    $this->travel(2)->hours();
+    expect($claims->candidates(10)->pluck('id')->all())->toBe([]);
+
+    app(ChangeTaskStatus::class)->resume($this->task->fresh());
+
+    // Nobody holds it any more, so it starts at once, without waiting for a stall window.
+    expect($claims->candidates(10)->pluck('id')->all())->toBe([$this->task->id]);
+});
+
+it('never offers a paused task, and leaves paused tasks out of the queue count', function () {
+    app(ChangeTaskStatus::class)->pause($this->task);
+
+    expect(app(ClaimTasks::class)->candidates(10))->toBeEmpty()
+        ->and(fn () => app(ClaimTasks::class)->claim($this->task->id, 'beta-1'))->toThrow(ValidationException::class);
+
+    RingMasterServer::tool(QueueStatus::class, ['project_path' => $this->beta->path])->assertSee('"queued":0');
 });

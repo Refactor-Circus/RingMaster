@@ -100,3 +100,9 @@ it('shows the notification setup and sends a test', function () {
 
     Http::assertSent(fn ($request) => str_contains($request['text'], 'Test notification'));
 });
+
+it('offers the inbox alarm in Settings and loads it on every page', function () {
+    Livewire::test(Settings::class)->assertSee('Sound alarm when something waits in the Inbox')->assertSee('Quiet hours');
+
+    $this->get(route('inbox'))->assertOk()->assertSee('window.RingMasterAlarm', false)->assertSee('ring-master-counts', false);
+});

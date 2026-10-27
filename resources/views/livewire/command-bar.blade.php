@@ -51,9 +51,9 @@
                             @foreach ($results as $result)
                                 @php($isSpec = $result instanceof \App\Models\Spec)
                                 <a data-cmd href="{{ $isSpec ? route('specs.show', $result) : route('tasks.show', $result) }}" wire:navigate x-on:click="open = false" x-bind:class="items()[active] === $el && 'bg-white/[0.06]'" class="flex items-center gap-3 rounded-xl px-3 py-2.5">
-                                    <span class="rm-dot rm-tone-{{ $isSpec ? $result->tone() : $result->status->tone() }}"></span>
+                                    <span class="rm-dot rm-tone-{{ $isSpec ? $result->tone() : $result->statusTone() }}"></span>
                                     <span class="min-w-0 flex-1 truncate text-sm text-zinc-200">{{ $result->title }}</span>
-                                    <span class="rm-mono shrink-0 text-xs text-zinc-500">{{ $result->project->folder }} · {{ $isSpec ? $result->status : $result->status->label() }}</span>
+                                    <span class="rm-mono shrink-0 text-xs text-zinc-500">{{ $result->project->folder }} · {{ $isSpec ? $result->status : $result->statusLabel() }}</span>
                                 </a>
                             @endforeach
                         @endif

@@ -30,12 +30,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $questions
  * @property list<string> $files
  * @property CarbonImmutable|null $spec_updated_at
+ * @property CarbonImmutable|null $pr_merged_at when the runner saw every PR merged
  * @property CarbonImmutable|null $activity_at last write to the spec folder or, while building, its worktree
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Project $project
  */
-#[Fillable(['project_id', 'key', 'dir', 'title', 'status', 'column', 'ticket', 'pr', 'branch', 'tasks_done', 'tasks_total', 'packages', 'rounds', 'decisions', 'decision', 'questions', 'files', 'spec_updated_at', 'activity_at'])]
+#[Fillable(['project_id', 'key', 'dir', 'title', 'status', 'column', 'ticket', 'pr', 'branch', 'tasks_done', 'tasks_total', 'packages', 'rounds', 'decisions', 'decision', 'questions', 'files', 'spec_updated_at', 'activity_at', 'pr_merged_at'])]
 class Spec extends Model
 {
     /**
@@ -77,6 +78,12 @@ class Spec extends Model
     /**
      * The interface tone for the spec's board column.
      */
+    /** Tasks in tasks.md not checked off yet. */
+    public function unbuiltTasks(): int
+    {
+        return max(0, $this->tasks_total - $this->tasks_done);
+    }
+
     public function tone(): string
     {
         return match ($this->column) {
@@ -146,6 +153,7 @@ class Spec extends Model
             'files' => 'array',
             'spec_updated_at' => 'datetime',
             'activity_at' => 'datetime',
+            'pr_merged_at' => 'datetime',
         ];
     }
 }

@@ -24,9 +24,10 @@
 
                 <nav class="flex flex-col gap-1">
                     <x-rm.nav-link :href="route('board')" icon="view-columns" :current="request()->routeIs('board', 'specs.show')">Board</x-rm.nav-link>
-                    <x-rm.nav-link :href="route('inbox')" icon="inbox" :current="request()->routeIs('inbox')" :badge="$waitingOnYou ?: null" tone="wait">Inbox</x-rm.nav-link>
-                    <x-rm.nav-link :href="route('tasks')" icon="queue-list" :current="request()->routeIs('tasks', 'tasks.show')" :badge="$queued ?: null" tone="live">Tasks</x-rm.nav-link>
+                    <x-rm.nav-link :href="route('inbox')" icon="inbox" :current="request()->routeIs('inbox')" :badge="$waitingOnYou ?: null" count="inbox" tone="wait">Inbox</x-rm.nav-link>
+                    <x-rm.nav-link :href="route('tasks')" icon="queue-list" :current="request()->routeIs('tasks', 'tasks.show')" :badge="$queued ?: null" count="queued" tone="live">Tasks</x-rm.nav-link>
                     <x-rm.nav-link :href="route('runs')" icon="cpu-chip" :current="request()->routeIs('runs', 'runs.show')">Runs</x-rm.nav-link>
+                    <x-rm.nav-link :href="route('workflow')" icon="arrow-path-rounded-square" :current="request()->routeIs('workflow')">Workflow</x-rm.nav-link>
                     <x-rm.nav-link :href="route('workspaces')" icon="folder" :current="request()->routeIs('workspaces')">Workspaces</x-rm.nav-link>
                 </nav>
 
@@ -61,7 +62,7 @@
 
                     <nav class="flex gap-1 overflow-x-auto px-3 pb-2 lg:hidden">
                         @foreach ([['board', 'Board', ['board', 'specs.show']], ['inbox', 'Inbox', ['inbox']], ['tasks', 'Tasks', ['tasks', 'tasks.show']], ['runs', 'Runs', ['runs', 'runs.show']], ['workspaces', 'Workspaces', ['workspaces']], ['settings', 'Settings', ['settings']]] as [$route, $label, $active])
-                            <a href="{{ route($route) }}" wire:navigate @class(['rm-mono shrink-0 rounded-lg px-3 py-1.5 text-xs', 'bg-white/10 text-white' => request()->routeIs(...$active), 'text-zinc-400' => ! request()->routeIs(...$active)])>{{ $label }}@if ($route === 'inbox' && $waitingOnYou) · {{ $waitingOnYou }}@endif</a>
+                            <a href="{{ route($route) }}" wire:navigate @class(['rm-mono shrink-0 rounded-lg px-3 py-1.5 text-xs', 'bg-white/10 text-white' => request()->routeIs(...$active), 'text-zinc-400' => ! request()->routeIs(...$active)])>{{ $label }}@if ($route === 'inbox')<span x-data="{ n: {{ (int) $waitingOnYou }} }" x-on:ring-master-counts.window="n = $event.detail.inbox" x-show="n > 0" @unless ($waitingOnYou) style="display: none" @endunless> · <span x-text="n">{{ $waitingOnYou }}</span></span>@endif</a>
                         @endforeach
                     </nav>
                 </header>
@@ -74,6 +75,8 @@
 
         <livewire:command-bar />
         <livewire:browser-notifier />
+        <livewire:nav-counter />
+        <x-rm.alarm />
 
         @fluxScripts
     </body>

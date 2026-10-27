@@ -23,7 +23,7 @@
             @if ($spec->branch)<span>⎇ {{ $spec->branch }}</span>@endif
             @if ($spec->tasks_total > 0)<span>Tasks {{ $spec->tasks_done }}/{{ $spec->tasks_total }}</span>@endif
             @foreach ($tasks as $task)
-                <a href="{{ route('tasks.show', $task) }}" wire:navigate class="hover:text-cyan-300">task: {{ $task->title }} ({{ $task->status->label() }})</a>
+                <a href="{{ route('tasks.show', $task) }}" wire:navigate class="hover:text-cyan-300">task: {{ $task->title }} ({{ $task->statusLabel() }})</a>
             @endforeach
         </div>
 
@@ -43,6 +43,21 @@
             @foreach ($items as $item)
                 <livewire:answer-item :item="$item" :wire:key="'item-'.$item->id" />
             @endforeach
+        </section>
+    @endif
+
+    @if ($spec->status === 'in-review' && $items->isEmpty())
+        <section class="max-w-4xl">
+            <form wire:submit="sendBack" class="rm-panel space-y-3 p-5" data-send-back>
+                <div class="rm-kicker">Send back to the factory</div>
+                <p class="text-sm text-zinc-400">
+                    Claude adds your note to tasks.md as a rework group and relaunches the build on the same branch; the PR picks up the new commits.
+                    @if ($spec->unbuiltTasks() > 0) {{ $spec->unbuiltTasks() }} of {{ $spec->tasks_total }} tasks are still unbuilt. @endif
+                </p>
+                <textarea wire:model="sendBackNote" rows="2" placeholder="What to change" class="w-full rounded-xl border border-white/10 bg-black/30 p-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400/50 focus:outline-none"></textarea>
+                <flux:error name="note" />
+                <button type="submit" class="rm-mono inline-flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-100 hover:border-cyan-400/50"><flux:icon name="arrow-uturn-left" variant="micro" />Send back</button>
+            </form>
         </section>
     @endif
 

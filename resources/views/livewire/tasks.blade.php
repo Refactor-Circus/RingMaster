@@ -18,7 +18,7 @@
     @else
         <div class="space-y-2">
             @foreach ($tasks as $task)
-                <a href="{{ route('tasks.show', $task) }}" wire:navigate wire:key="task-{{ $task->id }}" class="rm-panel rm-panel-hover rm-edge rm-tone-{{ $task->status->tone() }} rm-rise grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_9rem_8rem_10rem_7rem]">
+                <a href="{{ route('tasks.show', $task) }}" wire:navigate wire:key="task-{{ $task->id }}" class="rm-panel rm-panel-hover rm-edge rm-tone-{{ $task->statusTone() }} rm-rise grid items-center gap-3 px-5 py-4 sm:grid-cols-[1fr_9rem_8rem_10rem_7rem]">
                     <div class="min-w-0">
                         <div class="truncate font-medium text-white">{{ $task->title }}</div>
                         <div class="rm-mono truncate text-[11px] text-zinc-500">{{ strtolower($task->kind->label()) }}@if ($task->ticket_ref) · {{ $task->ticket_ref }}@endif @if ($task->spec) · spec {{ $task->spec->status }}@endif</div>
@@ -30,7 +30,7 @@
                         @endforeach
                         <span class="rm-mono ml-1.5 text-[11px] text-zinc-500">{{ strtolower($task->priority->label()) }}</span>
                     </span>
-                    <x-rm.pill :tone="$task->status->tone()" dot :ping="$task->status->tone() === 'live'" class="justify-self-start">{{ $task->status->label() }}</x-rm.pill>
+                    <x-rm.pill :tone="$task->statusTone()" dot :ping="$task->statusTone() === 'live'" class="justify-self-start">{{ $task->statusLabel() }}</x-rm.pill>
                     <span class="rm-mono text-right text-[11px] text-zinc-500">{{ $task->updated_at?->diffForHumans(short: true) }}</span>
                 </a>
             @endforeach

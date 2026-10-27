@@ -7,6 +7,7 @@ use App\Mcp\Tools\Heartbeat;
 use App\Mcp\Tools\LinkSpec;
 use App\Mcp\Tools\NextTask;
 use App\Mcp\Tools\PendingAnswers;
+use App\Mcp\Tools\ProposeTask;
 use App\Mcp\Tools\QueueStatus;
 use App\Mcp\Tools\ReleaseTask;
 use Laravel\Mcp\Server;
@@ -24,6 +25,8 @@ Work through it with the /ring-master-inbox skill:
 2. next-task, then claim-task with a stable session name. Run /ring-master-ship with the task's ship_input in the task's project folder.
 3. As soon as the spec folder exists, link-spec. Send heartbeat between stages (and with a progress message), or the claim expires.
 4. If you cannot finish, release-task with the reason (failed: true when it cannot be done as asked).
+5. If the task needs a separate job first (a fix in another package, say), propose-task it, then release-task. Never start that job yourself: the user accepts it in the Inbox, and your task resumes once it is done.
+6. A claimed task with a resume_note: do what the note says before anything else.
 
 Never answer an architectural question yourself, and never merge.
 TEXT)]
@@ -37,6 +40,7 @@ class RingMasterServer extends Server
         Heartbeat::class,
         LinkSpec::class,
         ReleaseTask::class,
+        ProposeTask::class,
     ];
 
     protected array $resources = [];

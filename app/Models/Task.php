@@ -15,7 +15,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * A piece of work you queued: an idea, a ticket or a spec, for one project.
  * Once a spec exists for it, the scanner keeps its status in step with the
- * spec's.
+ * spec's. A paused task keeps its status but no session picks it up; one
+ * blocked by another task waits until that one is done.
  *
  * @property int $id
  * @property int $project_id
@@ -31,14 +32,65 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable|null $claimed_at
  * @property CarbonImmutable|null $lease_expires_at
  * @property int $attempts
+ * @property CarbonImmutable|null $paused_at
+ * @property string|null $pause_reason
+ * @property int|null $blocked_by_task_id
+ * @property string|null $proposal_reason
+ * @property string|null $resume_note
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Project $project
  * @property-read Spec|null $spec
+ * @property-read Task|null $blockedBy
  */
-#[Fillable(['project_id', 'spec_id', 'spec_key', 'kind', 'title', 'body', 'ticket_ref', 'priority', 'status', 'claimed_by', 'claimed_at', 'lease_expires_at', 'attempts'])]
+#[Fillable(['project_id', 'spec_id', 'spec_key', 'kind', 'title', 'body', 'ticket_ref', 'priority', 'status', 'claimed_by', 'claimed_at', 'lease_expires_at', 'attempts', 'paused_at', 'pause_reason', 'blocked_by_task_id', 'proposal_reason', 'resume_note'])]
 class Task extends Model
 {
+    public function isPaused(): bool
+    {
+        return $this->paused_at !== null;
+    }
+
+    public function isBlocked(): bool
+    {
+        return $this->blocked_by_task_id !== null;
+    }
+
+    /** The status as shown: a paused or blocked task reads as such, whatever its spec says. */
+    public function statusLabel(): string
+    {
+        return match (true) {
+            $this->isBlocked() => 'Blocked',
+            $this->isPaused() => 'Paused',
+            default => $this->status->label(),
+        };
+    }
+
+    public function statusTone(): string
+    {
+        return $this->isPaused() || $this->isBlocked() ? 'wait' : $this->status->tone();
+    }
+
+    /**
+     * The task this one waits on.
+     *
+     * @return BelongsTo<Task, $this>
+     */
+    public function blockedBy(): BelongsTo
+    {
+        return $this->belongsTo(Task::class, 'blocked_by_task_id');
+    }
+
+    /**
+     * Tasks waiting on this one.
+     *
+     * @return HasMany<Task, $this>
+     */
+    public function blocking(): HasMany
+    {
+        return $this->hasMany(Task::class, 'blocked_by_task_id');
+    }
+
     /**
      * @return BelongsTo<Project, $this>
      */
@@ -107,6 +159,7 @@ class Task extends Model
             'status' => TaskStatus::class,
             'claimed_at' => 'datetime',
             'lease_expires_at' => 'datetime',
+            'paused_at' => 'datetime',
         ];
     }
 }

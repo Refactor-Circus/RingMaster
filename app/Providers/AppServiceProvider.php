@@ -2,11 +2,8 @@
 
 namespace App\Providers;
 
-use App\Enums\AttentionStatus;
-use App\Enums\TaskStatus;
-use App\Models\AttentionItem;
-use App\Models\Task;
 use App\Runner\Runner;
+use App\Support\NavCounts;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -32,11 +29,9 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
 
         View::composer(['layouts.app', 'layouts::app'], function (\Illuminate\View\View $view): void {
-            $view->with('waitingOnYou', AttentionItem::query()
-                ->where('status', AttentionStatus::Open)
-                ->whereHas('spec.project.workspace', fn ($query) => $query->where('enabled', true))
-                ->count());
-            $view->with('queued', Task::query()->where('status', TaskStatus::Queued)->count());
+            $counts = NavCounts::get();
+            $view->with('waitingOnYou', $counts['inbox']);
+            $view->with('queued', $counts['queued']);
             $view->with('runner', Runner::alive() ? (Runner::paused() ? 'wait' : 'live') : 'idle');
         });
     }

@@ -4,6 +4,7 @@ namespace App\Runner;
 
 use App\Actions\ClaimTasks;
 use App\Actions\ScanWorkspaces;
+use App\Actions\TaskProposals;
 use App\Enums\AttentionStatus;
 use App\Enums\RunKind;
 use App\Enums\RunStatus;
@@ -14,6 +15,8 @@ use App\Models\Project;
 use App\Models\Run;
 use App\Models\Task;
 use App\Support\Notifier;
+use App\Support\PullRequests;
+use Dotenv\Dotenv;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
@@ -31,6 +34,17 @@ final class Runner
 
     public const string HEARTBEAT = 'ring-master.runner.heartbeat';
 
+    /** Set while a runner waits for its sessions to end before it restarts on new code. */
+    public const string OUTDATED = 'ring-master.runner.outdated';
+
+    /** Set while the last gh check of PRs in review is recent. */
+    public const string PR_CHECK = 'ring-master.runner.pr-check';
+
+    /** Folders whose changes a running runner must load: code, config and installed packages. */
+    private const array CODE = ['app', 'config', 'routes', 'resources/runner', 'composer.lock', 'vendor/composer/installed.json', 'vendor/refactor-circus/ringside/src'];
+
+    private readonly string $booted;
+
     /** @var array<int, resource> run id => process */
     private array $processes = [];
 
@@ -43,7 +57,49 @@ final class Runner
         private readonly ClaudeCommand $command,
         private readonly RunLog $log,
         private readonly Notifier $notifier,
-    ) {}
+        private readonly TaskProposals $proposals,
+        private readonly PullRequests $pullRequests,
+    ) {
+        $this->booted = self::codeVersion();
+    }
+
+    /**
+     * The newest modification time across the app's code, so a long-running
+     * runner can tell that what it loaded is out of date.
+     */
+    public static function codeVersion(): string
+    {
+        $newest = 0;
+        clearstatcache();
+
+        foreach (self::CODE as $path) {
+            $path = base_path($path);
+
+            if (is_file($path)) {
+                $newest = max($newest, (int) filemtime($path));
+            } elseif (is_dir($path)) {
+                foreach (File::allFiles($path) as $file) {
+                    $newest = max($newest, $file->getMTime());
+                }
+            }
+        }
+
+        return (string) $newest;
+    }
+
+    /**
+     * Whether the code changed since this runner started. It then starts
+     * nothing new and restarts once its sessions have ended.
+     */
+    public function outdated(): bool
+    {
+        return self::codeVersion() !== $this->booted;
+    }
+
+    public static function waitingToRestart(): bool
+    {
+        return (bool) Cache::get(self::OUTDATED, false);
+    }
 
     public static function paused(): bool
     {
@@ -106,10 +162,19 @@ final class Runner
 
         $this->scan->ifStale();
         $this->claims->expire();
+        // PR state comes from gh, so it is checked every few minutes, not every tick.
+        if (Cache::add(self::PR_CHECK, true, 300)) {
+            $this->pullRequests->refresh();
+        }
+
+        $this->proposals->unblockFinished();
         $this->reap();
         $this->stopRequested();
 
-        if (self::paused() || $this->stopping) {
+        $outdated = $this->outdated();
+        Cache::put(self::OUTDATED, $outdated, 600);
+
+        if (self::paused() || $this->stopping || $outdated) {
             return;
         }
 
@@ -199,6 +264,7 @@ final class Runner
             [0 => ['file', '/dev/null', 'r'], 1 => ['file', $log, 'w'], 2 => ['file', $log.'.err', 'w']],
             $pipes,
             $project->path,
+            self::sessionEnv(),
         );
 
         if (! is_resource($process)) {
@@ -212,6 +278,24 @@ final class Runner
 
         $label = $kind === RunKind::Task ? "Run #{$run->id} started" : "Run #{$run->id} started to apply answers in {$project->folder}";
         Activity::record('run.started', $label, $task);
+    }
+
+    /**
+     * The runner's environment without what RingMaster's own .env put in it.
+     * Laravel exports .env into the process, and a session's PHP tools
+     * (Testbench, a package's tests) would read RingMaster's SESSION_DRIVER,
+     * DB_CONNECTION or APP_ENV as their own.
+     *
+     * @return array<string, string>
+     */
+    public static function sessionEnv(): array
+    {
+        $env = getenv();
+        $file = app()->environmentFilePath();
+        $own = is_file($file) ? array_keys(Dotenv::parse((string) file_get_contents($file))) : [];
+
+        // claude -p stops background work 10 minutes after its last turn, which killed factory builds part-way.
+        return [...array_diff_key($env, array_flip($own)), 'CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS' => '0'];
     }
 
     /**
@@ -369,7 +453,7 @@ final class Runner
     /**
      * @param  list<string>  $busy
      */
-    private static function overlaps(string $path, array $busy): bool
+    public static function overlaps(string $path, array $busy): bool
     {
         foreach ($busy as $other) {
             if ($path === $other || str_starts_with($path, $other.'/') || str_starts_with($other, $path.'/')) {

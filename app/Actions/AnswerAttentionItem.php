@@ -33,7 +33,15 @@ final class AnswerAttentionItem
         }
 
         $changed = $item->status === AttentionStatus::Answered;
-        $item->update(['status' => AttentionStatus::Answered, 'answer' => $answer, 'note' => $note, 'answered_at' => now()]);
+        // Leaving failing checks needs nothing from Claude, so it is done at once.
+        $leave = $answer === AttentionKind::LEAVE;
+        $item->update([
+            'status' => $leave ? AttentionStatus::Closed : AttentionStatus::Answered,
+            'answer' => $answer,
+            'note' => $note,
+            'answered_at' => now(),
+            ...($leave ? ['closed_at' => now()] : []),
+        ]);
 
         Activity::record('attention.answered', ($changed ? 'Changed answer: ' : 'Answered: ').Str::limit($item->question, 80).' → '.Str::limit($answer, 80), spec: $item->spec);
 

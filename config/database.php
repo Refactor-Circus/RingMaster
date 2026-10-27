@@ -38,10 +38,14 @@ return [
             'database' => env('DB_DATABASE', database_path('database.sqlite')),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
-            'busy_timeout' => null,
-            'journal_mode' => null,
-            'synchronous' => null,
-            'transaction_mode' => 'DEFERRED',
+            // The web app, the runner and every session's MCP server write to one
+            // file: WAL lets reads run during a write, the timeout waits for a lock
+            // instead of failing at once, and IMMEDIATE takes the write lock when a
+            // transaction starts (a DEFERRED one upgrading mid-way fails regardless).
+            'busy_timeout' => (int) env('DB_BUSY_TIMEOUT', 10000),
+            'journal_mode' => env('DB_JOURNAL_MODE', 'wal'),
+            'synchronous' => env('DB_SYNCHRONOUS', 'normal'),
+            'transaction_mode' => env('DB_TRANSACTION_MODE', 'IMMEDIATE'),
         ],
 
         'mysql' => [

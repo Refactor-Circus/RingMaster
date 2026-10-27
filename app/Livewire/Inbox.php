@@ -3,8 +3,11 @@
 namespace App\Livewire;
 
 use App\Actions\ScanWorkspaces;
+use App\Actions\TaskProposals;
 use App\Enums\AttentionStatus;
+use App\Enums\TaskStatus;
 use App\Models\AttentionItem;
+use App\Models\Task;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -25,6 +28,16 @@ class Inbox extends Component
         $scan->ifStale();
     }
 
+    public function acceptProposal(int $id, TaskProposals $proposals): void
+    {
+        $proposals->accept(Task::query()->findOrFail($id));
+    }
+
+    public function declineProposal(int $id, TaskProposals $proposals): void
+    {
+        $proposals->dismiss(Task::query()->findOrFail($id));
+    }
+
     #[On('answered')]
     public function answered(): void {}
 
@@ -32,6 +45,7 @@ class Inbox extends Component
     {
         return view('livewire.inbox', [
             'open' => $this->items(AttentionStatus::Open)->groupBy('spec_id'),
+            'proposals' => Task::query()->with(['project', 'blocking'])->where('status', TaskStatus::Proposed)->oldest()->get(),
             'waiting' => $this->items(AttentionStatus::Answered),
             'resolved' => $this->items(AttentionStatus::Applied, AttentionStatus::Closed)->take(10),
         ]);

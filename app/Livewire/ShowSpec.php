@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Actions\ScanWorkspaces;
+use App\Actions\SendBackSpec;
 use App\Enums\AttentionStatus;
 use App\Models\Spec;
 use Illuminate\Contracts\View\View;
@@ -22,6 +23,8 @@ class ShowSpec extends Component
     #[Url]
     public string $file = '';
 
+    public string $sendBackNote = '';
+
     public function mount(Spec $spec): void
     {
         $this->specId = $spec->id;
@@ -34,6 +37,13 @@ class ShowSpec extends Component
     public function refresh(ScanWorkspaces $scan): void
     {
         $scan->ifStale();
+    }
+
+    public function sendBack(SendBackSpec $sendBack): void
+    {
+        $this->resetErrorBag();
+        $sendBack->handle(Spec::query()->findOrFail($this->specId), $this->sendBackNote);
+        $this->sendBackNote = '';
     }
 
     #[On('answered')]

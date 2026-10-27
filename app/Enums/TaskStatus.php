@@ -4,6 +4,8 @@ namespace App\Enums;
 
 enum TaskStatus: string
 {
+    /** Suggested by a session; nothing runs it until you accept it. */
+    case Proposed = 'proposed';
     case Queued = 'queued';
     case Claimed = 'claimed';
     case Running = 'running';
@@ -39,6 +41,7 @@ enum TaskStatus: string
     public function color(): string
     {
         return match ($this) {
+            self::Proposed => 'amber',
             self::Queued => 'zinc',
             self::Claimed, self::Running => 'sky',
             self::NeedsAttention => 'amber',
@@ -56,7 +59,7 @@ enum TaskStatus: string
     {
         return match ($this) {
             self::Claimed, self::Running => 'live',
-            self::NeedsAttention => 'wait',
+            self::Proposed, self::NeedsAttention => 'wait',
             self::InReview => 'review',
             self::Done => 'done',
             self::Failed => 'fail',

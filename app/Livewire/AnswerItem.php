@@ -3,9 +3,11 @@
 namespace App\Livewire;
 
 use App\Actions\AnswerAttentionItem;
+use App\Enums\AttentionKind;
 use App\Enums\AttentionStatus;
 use App\Models\AttentionItem;
 use Illuminate\Contracts\View\View;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 
@@ -31,6 +33,9 @@ class AnswerItem extends Component
 
     public bool $editing = false;
 
+    /** Approving opens the PR; with tasks unbuilt you confirm that first. */
+    public bool $acceptUnbuilt = false;
+
     public function mount(AttentionItem $item, bool $showSpec = false): void
     {
         $this->itemId = $item->id;
@@ -54,9 +59,16 @@ class AnswerItem extends Component
     public function save(AnswerAttentionItem $answer): void
     {
         $this->resetErrorBag();
-        $answer->handle($this->item(), $this->choice === self::OTHER ? $this->other : $this->choice, $this->note);
+        $item = $this->item();
+
+        if ($item->kind === AttentionKind::Escalation && $this->choice === AttentionKind::APPROVE && $item->spec->unbuiltTasks() > 0 && ! $this->acceptUnbuilt) {
+            throw ValidationException::withMessages(['answer' => "Only {$item->spec->tasks_done} of {$item->spec->tasks_total} tasks are built. Tick the box to open the PR anyway, or send it back."]);
+        }
+
+        $answer->handle($item, $this->choice === self::OTHER ? $this->other : $this->choice, $this->note);
 
         $this->editing = false;
+        $this->acceptUnbuilt = false;
         $this->dispatch('answered');
     }
 

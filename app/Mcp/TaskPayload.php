@@ -30,6 +30,8 @@ final class TaskPayload
             'project' => ['folder' => $task->project->folder, 'path' => $task->project->path, 'is_workspace' => $task->project->is_workspace],
             'spec' => $task->spec === null ? null : ['key' => $task->spec->key, 'dir' => $task->spec->dir, 'status' => $task->spec->status],
             'ship_input' => self::shipInput($task),
+            'resume_note' => $task->resume_note,
+            'blocked_by' => $task->blocked_by_task_id,
         ];
     }
 

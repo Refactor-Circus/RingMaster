@@ -14,6 +14,7 @@ use App\Models\Workspace;
 use App\Support\JobActivity;
 use App\Support\Notifier;
 use App\Support\ProjectDiscovery;
+use App\Support\PullRequests;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -156,7 +157,7 @@ final class ScanWorkspaces
                     'kind' => AttentionKind::Decision,
                     'question' => $question['question'],
                     'options' => $question['options'],
-                    'recommendation' => $question['recommendation'],
+                    'recommendation' => AttentionItem::resolveRecommendation($question['recommendation'], $question['options']),
                     'evidence' => $question['evidence'],
                     'source' => $question['source'],
                 ]);
@@ -164,14 +165,24 @@ final class ScanWorkspaces
         }
 
         if ($spec->status === 'escalated') {
-            $present[] = $this->upsertItem($spec, 'escalation:'.count($spec->rounds), [
+            $reasons = trim((string) $spec->project->ringside()->read($spec->dir.'/decision.md'));
+
+            // Keyed by the reasons: a build escalates again without a new review round.
+            $present[] = $this->upsertItem($spec, 'escalation:'.substr(sha1($reasons), 0, 16), [
                 'kind' => AttentionKind::Escalation,
                 'question' => 'The factory escalated this job. Accept it as it stands, or send it back with a note?',
                 'options' => [AttentionKind::APPROVE, AttentionKind::REWORK],
                 'recommendation' => null,
-                'evidence' => Str::limit(trim((string) $spec->project->ringside()->read($spec->dir.'/decision.md')), 2000),
+                'evidence' => Str::limit($reasons, 2000),
                 'source' => 'build',
             ]);
+        }
+
+        // A send-back asked for in RingMaster, or a failing-checks item, waits until the job leaves review.
+        if ($spec->status === 'in-review') {
+            $present = [...$present, ...$spec->attentionItems()
+                ->where(fn ($query) => $query->where('key', 'like', SendBackSpec::KEY.'%')->orWhere('key', 'like', PullRequests::CHECKS.'%'))
+                ->pluck('id')->all()];
         }
 
         $gone = $spec->attentionItems()->whereNotIn('id', $present)->whereIn('status', [AttentionStatus::Open, AttentionStatus::Answered])->get();

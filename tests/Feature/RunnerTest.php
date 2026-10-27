@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\AnswerAttentionItem;
+use App\Actions\ChangeTaskStatus;
 use App\Actions\CreateTask;
 use App\Actions\ScanWorkspaces;
 use App\Enums\RunKind;
@@ -9,12 +10,14 @@ use App\Enums\TaskKind;
 use App\Enums\TaskStatus;
 use App\Livewire\Runs;
 use App\Livewire\ShowRun;
+use App\Livewire\ShowTask;
 use App\Models\AttentionItem;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\Task;
 use App\Runner\ClaudeCommand;
 use App\Runner\Runner;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -217,3 +220,114 @@ it('adopts a session a previous runner left running, and settles it when it ends
         ->and($run->fresh()->status)->toBe(RunStatus::Failed)
         ->and($task->fresh()->status)->toBe(TaskStatus::Queued);
 })->skip(! function_exists('posix_kill'), 'needs posix');
+
+it('pauses a task from its page, stopping its session, and force restarts it from the queue', function () {
+    putenv('FAKE_CLAUDE_MODE=sleep');
+    $task = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+    $runner = app(Runner::class);
+    $runner->tick();
+
+    Livewire::test(ShowTask::class, ['task' => $task])->call('pause')->assertSee('Paused')->assertSee('Resume');
+    $runner->drain();
+
+    expect(Run::query()->sole()->status)->toBe(RunStatus::Stopped)
+        ->and($task->fresh())->isPaused()->toBeTrue()->status->toBe(TaskStatus::Queued)->attempts->toBe(1);
+
+    $runner->tick();
+    expect(Run::query()->count())->toBe(1);
+
+    putenv('FAKE_CLAUDE_MODE=ok');
+    Livewire::test(ShowTask::class, ['task' => $task])->call('restart');
+
+    expect($task->fresh())->isPaused()->toBeFalse()->attempts->toBe(0)->status->toBe(TaskStatus::Queued)
+        ->and($task->timeline()->pluck('message')->first())->toBe('Restarted');
+
+    runOnce();
+    expect(Run::query()->count())->toBe(2);
+});
+
+it('force restart stops the session working on a task and queues it again', function () {
+    putenv('FAKE_CLAUDE_MODE=sleep');
+    $task = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+    $runner = app(Runner::class);
+    $runner->tick();
+
+    app(ChangeTaskStatus::class)->restart($task->fresh());
+    $runner->drain();
+
+    expect(Run::query()->sole()->status)->toBe(RunStatus::Stopped)
+        ->and($task->fresh())->status->toBe(TaskStatus::Queued)->claimed_by->toBeNull()
+        ->and($task->timeline()->pluck('message')->all())->toContain('Restarted; stopped its running session');
+});
+
+it('gives sessions the workspace root as a working directory, for job worktrees beside the package', function () {
+    $run = Run::query()->create(['project_id' => $this->beta->id, 'kind' => RunKind::Answers, 'session' => 's', 'log_path' => '']);
+
+    expect(app(ClaudeCommand::class)->for($run))->toContain('--add-dir', $this->beta->workspace->path);
+});
+
+it('starts nothing once its code changed, so it can restart into the new code', function () {
+    $task = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+    $runner = app(Runner::class);
+    $file = base_path('config/ring-master.php');
+    $mtime = (int) filemtime($file);
+
+    try {
+        touch($file, time() + 3600);
+        $runner->tick();
+
+        expect($runner->outdated())->toBeTrue()
+            ->and(Runner::waitingToRestart())->toBeTrue()
+            ->and(Run::query()->count())->toBe(0);
+    } finally {
+        touch($file, $mtime);
+    }
+
+    $runner->tick();
+    expect(Run::query()->sole()->task_id)->toBe($task->id);
+    $runner->drain();
+});
+
+it('says on a ready task what it is waiting for', function () {
+    $task = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+
+    Livewire::test(ShowTask::class, ['task' => $task])->assertSee('No runner is running');
+
+    Cache::put(Runner::HEARTBEAT, now()->getTimestamp());
+    Livewire::test(ShowTask::class, ['task' => $task])->assertSee('Next in line');
+
+    Runner::pause(true);
+    Livewire::test(ShowTask::class, ['task' => $task])->assertSee('The runner is paused');
+    Runner::pause(false);
+
+    app(ChangeTaskStatus::class)->pause($task);
+    Livewire::test(ShowTask::class, ['task' => $task])->assertDontSee('Next in line');
+});
+
+it('starts sessions without the values RingMaster\'s own .env put in the environment', function () {
+    $file = app()->environmentFilePath();
+
+    if (! is_file($file)) {
+        $this->markTestSkipped('No .env file');
+    }
+
+    $own = array_keys(Dotenv\Dotenv::parse((string) file_get_contents($file)));
+    putenv($own[0].'=leaked');
+
+    try {
+        expect(Runner::sessionEnv())->not->toHaveKey($own[0])->toHaveKey('PATH')
+            ->and(Runner::sessionEnv()['CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS'])->toBe('0');
+    } finally {
+        putenv($own[0]);
+    }
+});
+
+it('shows the answers run carrying a task on in its folder', function () {
+    $task = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+    $run = Run::query()->create(['project_id' => $this->beta->id, 'kind' => RunKind::Answers, 'session' => 's', 'status' => RunStatus::Running, 'log_path' => '', 'started_at' => now()]);
+
+    Livewire::test(ShowTask::class, ['task' => $task])
+        ->assertSee('#'.$run->id)
+        ->assertSee('applying your answers, then carrying on')
+        ->assertDontSee('Next in line');
+});

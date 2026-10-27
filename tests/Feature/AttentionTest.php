@@ -4,7 +4,10 @@ use App\Actions\AnswerAttentionItem;
 use App\Actions\ScanWorkspaces;
 use App\Enums\AttentionKind;
 use App\Enums\AttentionStatus;
+use App\Enums\TaskStatus;
 use App\Livewire\AnswerItem;
+use App\Livewire\NavCounter;
+use App\Livewire\ShowSpec;
 use App\Models\Activity;
 use App\Models\AttentionItem;
 use App\Models\Spec;
@@ -51,6 +54,22 @@ it('raises an escalation with approve and send-back options and the reasons as e
     expect($escalation->options)->toBe([AttentionKind::APPROVE, AttentionKind::REWORK])
         ->and($escalation->evidence)->toContain('No progress in two rounds.')
         ->and(AttentionItem::query()->where('kind', AttentionKind::Decision)->pluck('status')->unique()->all())->toBe([AttentionStatus::Closed]);
+});
+
+it('raises a new escalation when the job escalates again after an answer', function () {
+    rewriteFixture($this->root, $this->dir.'/meta.yml', "title: CSV import\nstatus: escalated\n");
+    rewriteFixture($this->root, $this->dir.'/decision.md', "# ESCALATED\n\nNo progress in two rounds.\n");
+    app(ScanWorkspaces::class)->ifStale();
+    $first = AttentionItem::query()->where('kind', AttentionKind::Escalation)->sole();
+    app(AnswerAttentionItem::class)->handle($first, AttentionKind::REWORK, 'Split the group.');
+
+    rewriteFixture($this->root, $this->dir.'/decision.md', "# ESCALATED\n\nGroup 2 stopped three times.\n");
+    app(ScanWorkspaces::class)->ifStale();
+
+    $open = AttentionItem::query()->where('kind', AttentionKind::Escalation)->where('status', AttentionStatus::Open)->sole();
+
+    expect($first->fresh()->status)->toBe(AttentionStatus::Applied)
+        ->and($open->evidence)->toContain('Group 2 stopped three times.');
 });
 
 it('answers with an option, your own words, or a change before Claude applies it', function () {
@@ -107,4 +126,63 @@ it('lists what needs you, what waits for Claude, and counts it in the nav', func
 
     // One question is still open, so the nav shows 1 beside Inbox.
     $this->get(route('board'))->assertSeeTextInOrder(['Board', 'Inbox', '1', 'Tasks', 'Workspaces']);
+});
+
+it('asks before approving an escalation that still has unbuilt tasks', function () {
+    rewriteFixture($this->root, $this->dir.'/meta.yml', "title: CSV import\nstatus: escalated\n");
+    rewriteFixture($this->root, $this->dir.'/decision.md', "# ESCALATED\n\nGroup 2 stopped.\n");
+    app(ScanWorkspaces::class)->ifStale();
+    $escalation = AttentionItem::query()->where('kind', AttentionKind::Escalation)->sole();
+    $escalation->spec->update(['tasks_done' => 6, 'tasks_total' => 28]);
+
+    Livewire::test(AnswerItem::class, ['item' => $escalation])
+        ->set('choice', AttentionKind::APPROVE)
+        ->assertSee('Only 6 of 28 tasks are built')
+        ->call('save')
+        ->assertHasErrors('answer')
+        ->set('acceptUnbuilt', true)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($escalation->fresh())->status->toBe(AttentionStatus::Answered)->answer->toBe(AttentionKind::APPROVE);
+});
+
+it('sends a job in review back with a note, held until the job leaves review', function () {
+    rewriteFixture($this->root, $this->dir.'/questions.yml', null);
+    rewriteFixture($this->root, $this->dir.'/meta.yml', "title: CSV import\nstatus: in-review\n");
+    app(ScanWorkspaces::class)->ifStale();
+    $spec = Spec::query()->where('key', '2026-10-23-1430-import')->sole();
+    $task = $spec->project->tasks()->create(['kind' => 'spec', 'title' => 'CSV import', 'spec_id' => $spec->id, 'status' => TaskStatus::InReview, 'paused_at' => now(), 'pause_reason' => 'Paused by you']);
+
+    Livewire::test(ShowSpec::class, ['spec' => $spec])
+        ->assertSee('Send back to the factory')
+        ->call('sendBack')
+        ->assertHasErrors('note')
+        ->set('sendBackNote', 'Split group 2.')
+        ->call('sendBack')
+        ->assertHasNoErrors()
+        ->assertDontSee('Send back to the factory');
+
+    $item = AttentionItem::query()->where('source', 'review')->sole();
+    expect($item)->status->toBe(AttentionStatus::Answered)->answer->toBe(AttentionKind::REWORK)->note->toBe('Split group 2.')
+        ->and($task->fresh()->isPaused())->toBeFalse();
+
+    app(ScanWorkspaces::class)->handle();
+    expect($item->fresh()->status)->toBe(AttentionStatus::Answered);
+
+    rewriteFixture($this->root, $this->dir.'/meta.yml', "title: CSV import\nstatus: building\n");
+    app(ScanWorkspaces::class)->ifStale();
+    expect($item->fresh()->status)->toBe(AttentionStatus::Applied);
+});
+
+it('pushes the navigation counts to the page as they change', function () {
+    Livewire::test(NavCounter::class)
+        ->call('check')
+        ->assertDispatched('ring-master-counts', inbox: 2, queued: 0);
+
+    AttentionItem::query()->first()->update(['status' => AttentionStatus::Closed]);
+
+    Livewire::test(NavCounter::class)
+        ->call('check')
+        ->assertDispatched('ring-master-counts', inbox: 1, queued: 0);
 });

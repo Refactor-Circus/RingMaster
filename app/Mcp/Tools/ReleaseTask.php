@@ -26,7 +26,7 @@ class ReleaseTask extends Tool
             'task_id' => $schema->integer()->required(),
             'session' => $schema->string()->required(),
             'reason' => $schema->string()->required(),
-            'failed' => $schema->boolean()->description('true when the task cannot be done as asked; false (default) to put it back in the queue.'),
+            'failed' => $schema->boolean()->description('true when the task cannot be done as asked; false (default) to hand it back: a task without a spec goes back in the queue, one with a spec is paused until the user resumes it, so say in reason what they must fix.'),
         ];
     }
 }

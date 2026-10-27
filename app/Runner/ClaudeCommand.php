@@ -8,7 +8,8 @@ use App\Models\Run;
 /**
  * The `claude -p` command line for one run: the inbox skill as the prompt,
  * stream-json output for the log, only the configured tools (anything else
- * is denied at once, never prompted), and RingMaster's own MCP server.
+ * is denied at once, never prompted), the workspace root as a working
+ * directory, and RingMaster's own MCP server.
  */
 final class ClaudeCommand
 {
@@ -37,6 +38,8 @@ final class ClaudeCommand
             '--name', "RingMaster run #{$run->id}",
             ...(is_string($model) && $model !== '' ? ['--model', $model] : []),
             ...(is_numeric($budget) ? ['--max-budget-usd', (string) $budget] : []),
+            // Job worktrees sit beside the package (../Package--spec), outside its folder.
+            '--add-dir', $run->project->workspace->path,
             '--mcp-config', $this->mcpConfig(),
             '--allowedTools', ...$tools,
         ];

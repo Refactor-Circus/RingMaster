@@ -23,7 +23,7 @@ class QueueStatus extends Tool
     {
         $path = $request->get('project_path');
         $path = is_string($path) ? $path : null;
-        $queued = Task::query()->where('status', TaskStatus::Queued)->whereHas('project', fn (Builder $query) => $query->within($path));
+        $queued = Task::query()->where('status', TaskStatus::Queued)->whereNull('paused_at')->whereNull('blocked_by_task_id')->whereHas('project', fn (Builder $query) => $query->within($path));
         $items = fn (AttentionStatus $status) => AttentionItem::query()->where('status', $status)->whereHas('spec.project', fn (Builder $query) => $query->within($path))->count();
 
         return Response::json([

@@ -52,6 +52,15 @@
                     <textarea wire:model="other" rows="2" placeholder="Your own answer" class="rm-terminal w-full p-3 text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400/50 focus:outline-none"></textarea>
                 @endif
 
+                @if ($escalation && $choice === \App\Enums\AttentionKind::APPROVE && $item->spec->unbuiltTasks() > 0)
+                    <div class="rm-panel rm-tone-wait space-y-2 px-4 py-3" data-unbuilt>
+                        <p class="text-sm text-amber-100">Only {{ $item->spec->tasks_done }} of {{ $item->spec->tasks_total }} tasks are built. Approving opens the PR with just those; the rest stay unbuilt.</p>
+                        <label class="flex items-center gap-2 text-sm text-zinc-300">
+                            <input type="checkbox" wire:model="acceptUnbuilt" class="rounded border-white/20 bg-black/30">Open the PR anyway
+                        </label>
+                    </div>
+                @endif
+
                 <flux:error name="answer" />
 
                 <textarea wire:model="note" rows="2" placeholder="{{ $escalation ? 'What to change (required to send it back)' : 'Why, in your words: recorded in decisions.md (optional)' }}" class="w-full rounded-xl border border-white/10 bg-black/30 p-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-400/50 focus:outline-none"></textarea>

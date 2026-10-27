@@ -101,7 +101,7 @@ return [
 
     'runner' => [
         'claude_bin' => env('RING_MASTER_CLAUDE_BIN', 'claude'),
-        'concurrency' => (int) env('RING_MASTER_RUNNER_CONCURRENCY', 1),
+        'concurrency' => (int) env('RING_MASTER_RUNNER_CONCURRENCY', 3),
         'model' => env('RING_MASTER_RUNNER_MODEL'),
         'max_budget_usd' => env('RING_MASTER_RUNNER_MAX_BUDGET_USD'),
         'max_attempts' => (int) env('RING_MASTER_RUNNER_MAX_ATTEMPTS', 2),
@@ -110,7 +110,8 @@ return [
             'Read', 'Edit', 'Write', 'Glob', 'Grep', 'Workflow', 'Agent', 'Skill',
             'Bash(composer *)', 'Bash(vendor/bin/*)', 'Bash(php *)', 'Bash(git *)', 'Bash(gh *)',
             'Bash(node *)', 'Bash(npm *)', 'Bash(laravel *)', 'Bash(ls *)', 'Bash(mkdir *)',
-            'Bash(echo *)', 'Bash(date)', 'Bash(date *)', 'Bash(pwd)',
+            'Bash(echo *)', 'Bash(date)', 'Bash(date *)', 'Bash(pwd)', 'Bash(cd *)',
+            'Bash(cat *)', 'Bash(head *)', 'Bash(tail *)', 'Bash(wc *)', 'Bash(sort *)', 'Bash(diff *)', 'Bash(jq *)',
             'mcp__ring-master',
         ],
     ],

@@ -42,7 +42,7 @@
                     </div>
 
                     @forelse ($queue as $task)
-                        <a href="{{ route('tasks.show', $task) }}" wire:navigate wire:key="task-{{ $task->id }}" class="rm-panel rm-panel-hover rm-edge rm-tone-{{ $task->status->tone() }} rm-rise block space-y-3 p-4">
+                        <a href="{{ route('tasks.show', $task) }}" wire:navigate wire:key="task-{{ $task->id }}" class="rm-panel rm-panel-hover rm-edge rm-tone-{{ $task->statusTone() }} rm-rise block space-y-3 p-4">
                             <div class="flex items-start justify-between gap-2">
                                 <h3 class="text-sm font-medium leading-snug text-white">{{ $task->title }}</h3>
                                 @if ($task->priority->value >= 2)
@@ -53,7 +53,7 @@
                                 <span>{{ $task->project->folder }}</span><span>·</span><span>{{ strtolower($task->kind->label()) }}</span>
                                 @if ($task->ticket_ref)<span>·</span><span>{{ $task->ticket_ref }}</span>@endif
                             </div>
-                            <x-rm.pill :tone="$task->status->tone()" dot :ping="$task->status->tone() === 'live'">{{ $task->status->label() }}</x-rm.pill>
+                            <x-rm.pill :tone="$task->statusTone()" dot :ping="$task->statusTone() === 'live'">{{ $task->statusLabel() }}</x-rm.pill>
                         </a>
                     @empty
                         <button type="button" x-data x-on:click="$dispatch('open-command')" class="rounded-xl border border-dashed border-white/10 p-5 text-center text-sm text-zinc-500 transition hover:border-cyan-400/40 hover:text-cyan-200">

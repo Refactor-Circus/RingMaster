@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Enums\AttentionStatus;
+use App\Enums\TaskStatus;
 use App\Models\AttentionItem;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\Eloquent\Builder;
@@ -33,6 +34,7 @@ class PendingAnswers extends Tool
             'spec' => $answers->first()->spec->key,
             'spec_dir' => $answers->first()->spec->dir,
             'spec_status' => $answers->first()->spec->status,
+            'task_ids' => $answers->first()->spec->tasks()->whereIn('status', TaskStatus::open())->pluck('id')->all(),
             'answers' => $answers->map(fn (AttentionItem $item) => [
                 'kind' => $item->kind->value,
                 'question' => $item->question,

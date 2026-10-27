@@ -7,10 +7,19 @@
         <div class="flex flex-wrap items-start justify-between gap-4">
             <h1 class="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{{ $task->title }}</h1>
             <div class="flex gap-2">
-                @if ($task->status->isOpen())
+                @if ($task->status === \App\Enums\TaskStatus::Proposed)
+                    <flux:button wire:click="acceptProposal" size="sm" icon="check" variant="primary">Accept and queue</flux:button>
+                    <flux:button wire:click="declineProposal" wire:confirm="Decline this job? A task waiting on it stays paused until you resume it." size="sm" variant="danger">Decline</flux:button>
+                @elseif ($task->status->isOpen())
                     @unless ($editing)
                         <flux:button wire:click="edit" size="sm" icon="pencil">Edit</flux:button>
                     @endunless
+                    @if ($task->isPaused() || $task->isBlocked())
+                        <flux:button wire:click="resume" size="sm" icon="play" variant="primary">Resume</flux:button>
+                    @else
+                        <flux:button wire:click="pause" wire:confirm="Pause this task? No session picks it up until you resume it, and a session working on it now is stopped. The spec keeps its progress." size="sm" icon="pause">Pause</flux:button>
+                    @endif
+                    <flux:button wire:click="restart" wire:confirm="Force a restart? Any session on this task is stopped, its claim and attempt count are cleared, and it goes back to the queue to start again from where its spec stands." size="sm" icon="arrow-path">Force restart</flux:button>
                     <flux:button wire:click="cancelTask" wire:confirm="Cancel this task? Its spec folder, if any, is not touched." size="sm" variant="danger">Cancel task</flux:button>
                 @elseif (in_array($task->status, [\App\Enums\TaskStatus::Cancelled, \App\Enums\TaskStatus::Failed], true))
                     <flux:button wire:click="requeue" size="sm" icon="arrow-uturn-left">Queue again</flux:button>
@@ -19,7 +28,7 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-            <x-rm.pill :tone="$task->status->tone()" dot :ping="$task->status->tone() === 'live'">{{ $task->status->label() }}</x-rm.pill>
+            <x-rm.pill :tone="$task->statusTone()" dot :ping="$task->statusTone() === 'live'">{{ $task->statusLabel() }}</x-rm.pill>
             <x-rm.pill :tone="match ($task->priority->value) { 3 => 'fail', 2 => 'wait', default => 'idle' }">{{ strtolower($task->priority->label()) }} priority</x-rm.pill>
             <span class="rm-mono text-xs text-zinc-400">{{ strtolower($task->kind->label()) }}@if ($task->ticket_ref) · {{ $task->ticket_ref }}@endif</span>
             @if ($task->spec)
@@ -31,6 +40,36 @@
                 <span class="rm-mono text-xs text-zinc-500">· claimed by {{ $task->claimed_by }} {{ $task->claimed_at?->diffForHumans() }}</span>
             @endif
         </div>
+
+        @if ($waiting)
+            <div class="rm-panel rm-edge rm-mono flex items-center gap-3 px-4 py-3 text-xs text-zinc-300">
+                <span class="rm-dot rm-tone-idle"></span>{{ $waiting }}
+            </div>
+        @endif
+
+        @if ($task->status === \App\Enums\TaskStatus::Proposed)
+            <div class="rm-panel rm-tone-wait rm-edge space-y-1 p-4" data-proposal>
+                <div class="rm-mono text-xs text-amber-300">Proposed by a session: nothing runs it until you accept it.</div>
+                <div class="whitespace-pre-line text-sm text-zinc-200">{{ $task->proposal_reason }}</div>
+                @foreach ($task->blocking as $waiter)
+                    <a href="{{ route('tasks.show', $waiter) }}" wire:navigate class="rm-mono block text-xs text-cyan-300 hover:underline">#{{ $waiter->id }} {{ $waiter->title }} waits on it</a>
+                @endforeach
+            </div>
+        @endif
+
+        @if ($task->isBlocked() && $task->blockedBy)
+            <div class="rm-panel rm-tone-wait rm-edge space-y-1 p-4" data-blocked>
+                <div class="rm-mono text-xs text-amber-300">Waiting on another task: it resumes by itself once that one is done or its PR is merged.</div>
+                <a href="{{ route('tasks.show', $task->blockedBy) }}" wire:navigate class="text-sm text-cyan-300 hover:underline">#{{ $task->blockedBy->id }} {{ $task->blockedBy->project->folder }}: {{ $task->blockedBy->title }} ({{ $task->blockedBy->statusLabel() }})</a>
+            </div>
+        @endif
+
+        @if ($task->isPaused() && ! $task->isBlocked())
+            <div class="rm-panel rm-tone-wait rm-edge space-y-1 p-4">
+                <div class="rm-mono text-xs text-amber-300">Paused {{ $task->paused_at->diffForHumans() }}: no session picks it up until you resume it.</div>
+                <div class="whitespace-pre-line text-sm text-zinc-200">{{ $task->pause_reason }}</div>
+            </div>
+        @endif
 
         @if ($task->spec)
             <x-rm.stages :status="$task->spec->status" :has-rounds="$task->spec->rounds !== []" />
@@ -96,6 +135,9 @@
                         <span @class(['rm-orb', 'is-live' => $run->status->isActive()])></span>
                         <span class="rm-mono text-sm text-white">#{{ $run->id }}</span>
                         <span class="rm-mono text-xs text-zinc-400">{{ $run->status->value }}</span>
+                        @if ($run->kind === \App\Enums\RunKind::Answers)
+                            <span class="rm-mono text-xs text-zinc-500">applying your answers, then carrying on</span>
+                        @endif
                         <span class="rm-mono ml-auto text-xs text-zinc-500">{{ $run->started_at?->diffForHumans(short: true) }}@if ($run->cost_usd !== null) · ${{ $run->cost_usd }}@endif</span>
                     </a>
                 @endforeach

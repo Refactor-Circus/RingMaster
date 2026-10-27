@@ -24,7 +24,7 @@ Artisan::command('ring-master:summary {--project= : Only count work in this fold
     $project = $this->option('project');
     $path = is_string($project) ? $project : null;
 
-    $queued = Task::query()->where('status', TaskStatus::Queued)->whereHas('project', fn (Builder $query) => $query->within($path))->count();
+    $queued = Task::query()->where('status', TaskStatus::Queued)->whereNull('paused_at')->whereNull('blocked_by_task_id')->whereHas('project', fn (Builder $query) => $query->within($path))->count();
     $open = AttentionItem::query()->where('status', AttentionStatus::Open)->whereHas('spec.project', fn (Builder $query) => $query->within($path))->count();
     $answered = AttentionItem::query()->where('status', AttentionStatus::Answered)->whereHas('spec.project', fn (Builder $query) => $query->within($path))->count();
 
@@ -69,7 +69,20 @@ Artisan::command('ring-master:work {--once : Start what can start, wait for it t
     }
 
     do {
-        $runner->tick();
+        // One bad tick (a locked database, a scan error) must not take down the sessions this runner watches.
+        try {
+            $runner->tick();
+        } catch (Throwable $e) {
+            report($e);
+            $this->error('Tick failed, retrying: '.$e->getMessage());
+        }
+
+        // New code (a deploy, an edit, a composer update): restart into it once no session is left to watch.
+        if (! $runner->stopping() && ! $runner->busy() && $runner->outdated() && function_exists('pcntl_exec')) {
+            $this->info('The code changed: restarting the runner to load it.');
+            pcntl_exec(PHP_BINARY, [base_path('artisan'), 'ring-master:work']);
+        }
+
         sleep(max(1, (int) config('ring-master.runner.tick_seconds', 5)));
     } while (! $runner->stopping());
 
