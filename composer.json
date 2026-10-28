@@ -15,7 +15,7 @@
         "livewire/blaze": "^1.0",
         "livewire/flux": "^2.21",
         "livewire/livewire": "^4.1",
-        "refactor-circus/ringside": "*@dev"
+        "refactor-circus/ringside": "dev-main"
     },
     "require-dev": {
         "fakerphp/faker": "^1.24",
@@ -93,6 +93,16 @@
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
+        ],
+        "local:install": [
+            "@php bin/composer-local.php",
+            "@putenv COMPOSER=composer.local.json",
+            "@composer install"
+        ],
+        "local:update": [
+            "@php bin/composer-local.php",
+            "@putenv COMPOSER=composer.local.json",
+            "@composer update"
         ]
     },
     "extra": {
@@ -114,11 +124,8 @@
     "prefer-stable": true,
     "repositories": [
         {
-            "type": "path",
-            "url": "../../Projects/packages/Ringside",
-            "options": {
-                "symlink": true
-            }
+            "type": "vcs",
+            "url": "https://github.com/Refactor-Circus/Ringside.git"
         }
     ]
 }

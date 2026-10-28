@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Actions\SendBackSpec;
 use App\Enums\AttentionKind;
 use App\Enums\AttentionStatus;
 use App\Models\Activity;
@@ -12,15 +13,16 @@ use Illuminate\Support\Facades\Process;
  * Watches the PRs of jobs in review through gh. Spec folders only learn of
  * a merge when a session checks, so a merge is recorded here and the task
  * goes back to a session, which marks the spec merged and runs the
- * post-mortem. Failing checks become an Inbox item: send the job back with
- * them, or leave it.
+ * post-mortem. Failing checks send the job back to the factory on their
+ * own, up to ci.auto_fix_attempts times; after that they become an Inbox
+ * item: send the job back with them, or leave it.
  */
 final class PullRequests
 {
     /** Key prefix of the Inbox items for failing checks. */
     public const string CHECKS = 'checks:';
 
-    public function __construct(private readonly Notifier $notifier) {}
+    public function __construct(private readonly Notifier $notifier, private readonly SendBackSpec $sendBack) {}
 
     /**
      * @return int specs found merged
@@ -81,6 +83,14 @@ final class PullRequests
         }
 
         $lines = array_map(fn (array $c): string => "- {$c['workflow']} / {$c['name']}: {$c['link']}", $failing);
+        $note = "The PR's CI checks fail. Read the failing job logs (gh run view <run> --log-failed) and fix the cause:\n".implode("\n", $lines);
+
+        if ($spec->ci_fixes < (int) config('ring-master.ci.auto_fix_attempts', 2)) {
+            $this->autoFix($spec, $key, $failing, $lines, $note);
+
+            return;
+        }
+
         $item = $spec->attentionItems()->create([
             'key' => $key,
             'kind' => AttentionKind::Escalation,
@@ -88,13 +98,41 @@ final class PullRequests
             'options' => [AttentionKind::REWORK, AttentionKind::LEAVE],
             'evidence' => implode("\n", $lines),
             // Your note when you send it back; edit it before saving.
-            'note' => "The PR's CI checks fail. Read the failing job logs (gh run view <run> --log-failed) and fix the cause:\n".implode("\n", $lines),
+            'note' => $note,
             'source' => 'ci',
             'status' => AttentionStatus::Open,
         ]);
 
         Activity::record('attention.raised', 'Escalated: '.$item->question, spec: $spec);
         $this->notifier->send('PR checks fail', ["{$spec->project->folder}: {$spec->title}: ".count($failing).' failing'], "/specs/{$spec->id}");
+    }
+
+    /**
+     * Sends the job back with the failing checks as its note. The set is
+     * kept as a closed item under its key, so the same failures are not sent
+     * back again while the rework is waiting to start.
+     *
+     * @param  list<array{pr: string, name: string, workflow: string, link: string}>  $failing
+     * @param  list<string>  $lines
+     */
+    private function autoFix(Spec $spec, string $key, array $failing, array $lines, string $note): void
+    {
+        $attempt = $spec->ci_fixes + 1;
+        $spec->attentionItems()->create([
+            'key' => $key,
+            'kind' => AttentionKind::Escalation,
+            'question' => count($failing).' PR '.(count($failing) === 1 ? 'check failed' : 'checks failed').": sent back on its own (attempt {$attempt})",
+            'options' => [AttentionKind::REWORK],
+            'evidence' => implode("\n", $lines),
+            'answer' => AttentionKind::REWORK,
+            'source' => 'ci',
+            'status' => AttentionStatus::Closed,
+            'answered_at' => now(),
+            'closed_at' => now(),
+        ]);
+        $spec->update(['ci_fixes' => $attempt]);
+        $this->sendBack->handle($spec, $note);
+        Activity::record('ci.autofix', "PR checks fail: sent back to fix them (attempt {$attempt} of ".(int) config('ring-master.ci.auto_fix_attempts', 2).')', spec: $spec);
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace App\Actions;
 
+use App\Enums\AttentionStatus;
 use App\Enums\TaskStatus;
 use App\Models\Activity;
 use App\Models\Task;
@@ -105,6 +106,12 @@ final class ClaimTasks
     {
         $task = $this->held($taskId, $session);
         $key = basename(rtrim($spec, '/'));
+        $other = Task::query()->where('project_id', $task->project_id)->where('spec_key', $key)->whereKeyNot($task->id)->whereIn('status', TaskStatus::open())->first();
+
+        // Two tasks on one spec would both drive its stages; the other one owns it.
+        if ($other !== null) {
+            throw ValidationException::withMessages(['spec' => "Task #{$other->id} already works on spec {$key}. Do not link this task to it: if this task needs that job done first, propose-task it (it is linked to #{$other->id} instead), or release-task with the reason."]);
+        }
 
         $task->update(['spec_key' => $key, 'status' => TaskStatus::Running, 'lease_expires_at' => $this->leaseEnd()]);
         Activity::record('task.progress', "Working on spec {$key}", $task);
@@ -122,9 +129,13 @@ final class ClaimTasks
     public function release(int $taskId, string $session, string $reason, bool $failed = false): Task
     {
         $task = $this->held($taskId, $session);
-        $paused = ! $failed && $task->spec_id !== null;
+        // Handed back again and again without a spec (each session decides it is someone else's job): stop the spin.
+        $spun = ! $failed && $task->spec_id === null && $task->attempts >= (int) config('ring-master.runner.max_attempts', 2);
+        $paused = ! $failed && ($task->spec_id !== null || $spun);
+        $reason = $spun ? "Handed back {$task->attempts} times without a spec, so it is paused instead of queued again. Last reason: ".trim($reason) : $reason;
         $task->update([
             'status' => $failed ? TaskStatus::Failed : ($task->spec_id === null ? TaskStatus::Queued : $task->status),
+            ...($spun ? ['attempts' => 0] : []),
             'claimed_by' => null,
             'claimed_at' => null,
             'lease_expires_at' => null,
@@ -167,7 +178,7 @@ final class ClaimTasks
     {
         return Task::query()
             ->whereNull('paused_at')
-            ->whereNull('blocked_by_task_id')
+            ->unblocked()
             ->whereHas('project.workspace', fn (Builder $query) => $query->where('enabled', true))
             ->where(fn (Builder $query) => $query
                 ->where('status', TaskStatus::Queued)
@@ -178,6 +189,18 @@ final class ClaimTasks
                     ->whereNull('claimed_by')
                     ->whereHas('spec', fn (Builder $query) => $query->whereIn('status', [...self::RESUMABLE, ...self::BUILDING])))
                 ->orWhere(fn (Builder $query) => $query->where('status', TaskStatus::Claimed)->whereNull('spec_id')->where('lease_expires_at', '<', now()))
+                // Answered and recorded, but the session stopped before relaunching the stage: nothing is left to ask.
+                ->orWhere(fn (Builder $query) => $query
+                    ->where('status', TaskStatus::NeedsAttention)
+                    ->whereNotNull('spec_id')
+                    ->where(fn (Builder $query) => $query->whereNull('claimed_by')->orWhere('lease_expires_at', '<', now()))
+                    ->whereHas('spec', fn (Builder $query) => $query
+                        ->where('status', 'needs-decision')
+                        ->where('questions', 0)
+                        // Applied since the task was last picked up, so a session that stalls again is not relaunched forever.
+                        ->whereHas('attentionItems', fn (Builder $query) => $query->where('status', AttentionStatus::Applied)
+                            ->where(fn (Builder $query) => $query->whereNull('tasks.claimed_at')->orWhereColumn('attention_items.applied_at', '>', 'tasks.claimed_at')))
+                        ->whereDoesntHave('attentionItems', fn (Builder $query) => $query->whereIn('status', [AttentionStatus::Open, AttentionStatus::Answered]))))
                 // In review and its PR merged: a session records the merge and runs the post-mortem.
                 ->orWhere(fn (Builder $query) => $query
                     ->where('status', TaskStatus::InReview)

@@ -2,8 +2,11 @@
 
 use App\Actions\AnswerAttentionItem;
 use App\Actions\ChangeTaskStatus;
+use App\Actions\ClaimTasks;
 use App\Actions\CreateTask;
 use App\Actions\ScanWorkspaces;
+use App\Actions\TaskDependencies;
+use App\Enums\RunFailure;
 use App\Enums\RunKind;
 use App\Enums\RunStatus;
 use App\Enums\TaskKind;
@@ -14,9 +17,11 @@ use App\Livewire\ShowTask;
 use App\Models\AttentionItem;
 use App\Models\Project;
 use App\Models\Run;
+use App\Models\Spec;
 use App\Models\Task;
 use App\Runner\ClaudeCommand;
 use App\Runner\Runner;
+use App\Support\Capacity;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
 
@@ -156,6 +161,20 @@ it('fails runs a previous runner left behind and frees their tasks', function ()
         ->and($task->fresh()->status)->toBe(TaskStatus::Queued);
 });
 
+it('gives up the claim of a job cut off mid-build, so it resumes at once instead of after the stall window', function () {
+    rewriteFixture($this->root, 'Beta/docs/agent/specs/2026-10-24-0900-exports/meta.yml', "title: Exports\nstatus: building\n");
+    app(ScanWorkspaces::class)->handle();
+    $spec = Spec::query()->where('key', '2026-10-24-0900-exports')->sole();
+    $task = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+    $task->update(['status' => TaskStatus::Running, 'spec_id' => $spec->id, 'claimed_by' => 'runner-old', 'lease_expires_at' => now()->addMinutes(10), 'attempts' => 1]);
+    Run::query()->create(['project_id' => $this->beta->id, 'task_id' => $task->id, 'kind' => RunKind::Task, 'session' => 'runner-old', 'status' => RunStatus::Running, 'log_path' => '', 'started_at' => now()]);
+
+    app(Runner::class)->recoverOrphans();
+
+    expect($task->fresh()->claimed_by)->toBeNull()
+        ->and(app(ClaimTasks::class)->claimable($task->id))->toBeTrue();
+});
+
 it('passes the model and a budget cap when configured', function () {
     config(['ring-master.runner.model' => 'sonnet', 'ring-master.runner.max_budget_usd' => '2.50']);
     $run = Run::query()->create(['project_id' => $this->beta->id, 'kind' => RunKind::Answers, 'session' => 's', 'log_path' => '']);
@@ -266,6 +285,15 @@ it('gives sessions the workspace root as a working directory, for job worktrees 
     expect(app(ClaudeCommand::class)->for($run))->toContain('--add-dir', $this->beta->workspace->path);
 });
 
+it('tells every session the allowlist rules in its system prompt, before the allowed tools', function () {
+    $run = Run::query()->create(['project_id' => $this->beta->id, 'kind' => RunKind::Answers, 'session' => 's', 'log_path' => '']);
+    $command = app(ClaudeCommand::class)->for($run);
+    $at = array_search('--append-system-prompt', $command, true);
+
+    expect($command[$at + 1])->toBe(ClaudeCommand::RULES)->toContain('one command per Bash call')
+        ->and($at)->toBeLessThan(array_search('--allowedTools', $command, true));
+});
+
 it('starts nothing once its code changed, so it can restart into the new code', function () {
     $task = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
     $runner = app(Runner::class);
@@ -330,4 +358,122 @@ it('shows the answers run carrying a task on in its folder', function () {
         ->assertSee('#'.$run->id)
         ->assertSee('applying your answers, then carrying on')
         ->assertDontSee('Next in line');
+});
+
+it('tells a usage limit from a failure: the attempt does not count and nothing new starts for a while', function () {
+    putenv('FAKE_CLAUDE_MODE=limit');
+    $task = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+
+    runOnce();
+
+    expect(Run::query()->sole())->failure->toBe(RunFailure::Limit)
+        ->and($task->fresh())->status->toBe(TaskStatus::Queued)->attempts->toBe(0)
+        ->and(Runner::backoffUntil())->toBeGreaterThan(now()->getTimestamp());
+
+    putenv('FAKE_CLAUDE_MODE=ok');
+    runOnce();
+
+    expect(Run::query()->count())->toBe(1);
+
+    Cache::forget(Runner::BACKOFF);
+    runOnce();
+
+    expect(Run::query()->count())->toBe(2);
+});
+
+it('records refused commands and suggests the allowlist entry, or why none should be added', function () {
+    putenv('FAKE_CLAUDE_MODE=refused');
+    app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+
+    runOnce();
+
+    expect(Run::query()->sole())->failure->toBe(RunFailure::Permission)->refused->toBe(['Bash: cd /tmp && composer test', 'Bash: rsync -a a b']);
+
+    Livewire::test(Runs::class)
+        ->assertSee('Refused commands')
+        ->assertSee('compound command: split it into one call each')
+        ->assertSee('Bash(rsync *)');
+});
+
+it('changes concurrency from the Runs page without a restart, and holds off while the machine is overloaded', function () {
+    Livewire::test(Runs::class)->call('concurrency', 2)->assertSee('5');
+
+    expect(Runner::concurrency())->toBe(5);
+
+    config(['ring-master.runner.max_load' => 0.000001]);
+    Cache::forever('ring-master.runner.cpus', 1);
+    app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+
+    if ((sys_getloadavg()[0] ?? 0) > 0) {
+        runOnce();
+        expect(Run::query()->count())->toBe(0);
+    }
+
+    config(['ring-master.runner.max_load' => null]);
+    runOnce();
+
+    expect(Run::query()->count())->toBe(1);
+});
+
+it('runs the planner at the workspace root with read-only tools when you ask, and once', function () {
+    Livewire::test(Runs::class)->call('plan');
+    app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Exports');
+
+    runOnce();
+
+    $plan = Run::query()->where('kind', RunKind::Plan)->sole();
+    $call = collect(fakeCalls($this->calls))->first(fn (array $call): bool => str_contains($call['argv'][0], 'portfolio planner'));
+
+    expect($plan->project->is_workspace)->toBeTrue()
+        ->and($call['cwd'])->toBe($plan->project->path)
+        ->and($call['argv'][0])->toContain("Session name: {$plan->session}")->toContain('- Beta: Exports')->toContain('suggest-task')
+        ->and($call['argv'])->toContain('Read', 'mcp__ring-master')->not->toContain('Bash(composer *)', 'Edit');
+
+    runOnce();
+
+    expect(Run::query()->where('kind', RunKind::Plan)->count())->toBe(1);
+});
+
+it('counts a session that exited as gone even before anything waited for it', function () {
+    $process = proc_open(['sleep', '0'], [], $pipes);
+    $pid = proc_get_status($process)['pid'];
+    usleep(300_000);
+
+    $alive = (new ReflectionMethod(Runner::class, 'pidAlive'))->invoke(null, $pid);
+
+    expect($alive)->toBeFalse();
+})->skip(! function_exists('pcntl_waitpid'), 'needs pcntl');
+
+it('says on the Runs page why fewer sessions run than the limit', function () {
+    Cache::put(Runner::HEARTBEAT, now()->getTimestamp());
+    $blocker = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Blocker');
+    $waiting = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Follow-up');
+    app(TaskDependencies::class)->add($waiting, $blocker);
+    Run::query()->create(['project_id' => $this->beta->id, 'kind' => RunKind::Answers, 'session' => 's', 'status' => RunStatus::Running, 'log_path' => '', 'started_at' => now()]);
+
+    $capacity = app(Capacity::class)->explain();
+
+    expect($capacity['live'])->toBe(1)
+        ->and($capacity['waiting'][Capacity::WAITS])->toContain("#{$waiting->id} Beta: Follow-up")
+        ->and($capacity['waiting'][Capacity::FOLDER])->toContain("#{$blocker->id} Beta: Blocker");
+
+    Livewire::test(Runs::class)->assertSee('Why 1 of')->assertSee('Folder busy')->assertSee("#{$waiting->id} Beta: Follow-up");
+});
+
+it('does not restart into new code that does not compile, and carries on with the code it has', function () {
+    $runner = app(Runner::class);
+    $file = app_path('Support/RunnerLintProbe.php');
+    sleep(1);
+    file_put_contents($file, "<?php\nnamespace App\\Support;\nuse Illuminate\\Database\\Eloquent\\Collection;\nuse Illuminate\\Support\\Collection;\n");
+
+    try {
+        expect(Runner::broken(time() - 5))->toHaveKey('app/Support/RunnerLintProbe.php')
+            ->and($runner->outdated())->toBeFalse();
+
+        file_put_contents($file, "<?php\nnamespace App\\Support;\n");
+
+        expect($runner->outdated())->toBeTrue();
+    } finally {
+        @unlink($file);
+    }
 });

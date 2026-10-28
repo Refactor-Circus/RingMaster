@@ -5,6 +5,7 @@ namespace App\Livewire;
 use App\Actions\ChangeTaskStatus;
 use App\Actions\ClaimTasks;
 use App\Actions\ScanWorkspaces;
+use App\Actions\TaskDependencies;
 use App\Actions\TaskProposals;
 use App\Actions\UpdateTask;
 use App\Enums\AttentionStatus;
@@ -12,6 +13,7 @@ use App\Enums\RunKind;
 use App\Enums\RunStatus;
 use App\Enums\TaskKind;
 use App\Enums\TaskPriority;
+use App\Enums\TaskStatus;
 use App\Models\Run;
 use App\Models\Task;
 use App\Runner\Runner;
@@ -35,6 +37,8 @@ class ShowTask extends Component
     public string $ticketRef = '';
 
     public int $priority = 1;
+
+    public string $dependsOn = '';
 
     public function mount(Task $task): void
     {
@@ -100,6 +104,19 @@ class ShowTask extends Component
         $proposals->dismiss($this->task());
     }
 
+    public function addDependency(TaskDependencies $dependencies): void
+    {
+        $this->validate(['dependsOn' => ['required', 'integer', 'exists:tasks,id']], attributes: ['dependsOn' => 'task']);
+
+        $dependencies->add($this->task(), Task::query()->with('project', 'spec')->findOrFail((int) $this->dependsOn));
+        $this->dependsOn = '';
+    }
+
+    public function removeDependency(int $id, TaskDependencies $dependencies): void
+    {
+        $dependencies->remove($this->task(), Task::query()->findOrFail($id));
+    }
+
     public function restart(ChangeTaskStatus $change): void
     {
         $change->restart($this->task());
@@ -120,6 +137,16 @@ class ShowTask extends Component
                 ->latest('id')
                 ->get(),
             'waiting' => $this->waiting($task),
+            // Open tasks in the same workspace it could wait on.
+            'candidates' => $task->status->isOpen() ? Task::query()
+                ->with('project')
+                ->whereKeyNot($task->id)
+                ->whereNotIn('id', $task->dependencies->modelKeys())
+                ->whereIn('status', array_filter(TaskStatus::cases(), fn (TaskStatus $status): bool => $status->isOpen() || $status === TaskStatus::Proposed))
+                ->whereHas('project', fn ($query) => $query->where('workspace_id', $task->project->workspace_id))
+                ->latest('id')
+                ->limit(100)
+                ->get() : collect(),
         ])->title($task->title);
     }
 
@@ -136,18 +163,13 @@ class ShowTask extends Component
         $active = Run::query()->with('project')->whereIn('status', [RunStatus::Running, RunStatus::Stopping])->get();
         $blocking = $active->first(fn (Run $run): bool => Runner::overlaps($task->project->path, [$run->project->path]));
 
-        return match (true) {
-            ! Runner::alive() => 'No runner is running. Start one with `php artisan ring-master:work`.',
-            Runner::paused() => 'The runner is paused. Resume it on the Runs page.',
-            Runner::waitingToRestart() => 'The runner is restarting to load new code once its running sessions finish.',
-            $blocking !== null => "Waiting for run #{$blocking->id} in {$blocking->project->folder} to finish: one session per folder tree.",
-            $active->count() >= max(1, (int) config('ring-master.runner.concurrency', 1)) => 'Waiting for a free slot: the runner is at its concurrency limit.',
-            default => 'Next in line: the runner picks it up within a few seconds.',
-        };
+        return Runner::holdReason()
+            ?? ($blocking !== null ? "Waiting for run #{$blocking->id} in {$blocking->project->folder} to finish: one session per folder tree." : null)
+            ?? 'Next in line: the runner picks it up within a few seconds.';
     }
 
     private function task(): Task
     {
-        return Task::query()->with(['project', 'spec', 'blockedBy.project', 'blocking'])->findOrFail($this->taskId);
+        return Task::query()->with(['project', 'spec', 'dependencies.project', 'dependents.project'])->findOrFail($this->taskId);
     }
 }

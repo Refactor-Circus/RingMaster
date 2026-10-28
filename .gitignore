@@ -44,3 +44,5 @@ yarn-error.log
 /docs/agent/standards.summary.md
 /.claude/skills/ring-master-*/
 /.claude/agents/ring-master-*.md
+composer.local.json
+composer.local.lock

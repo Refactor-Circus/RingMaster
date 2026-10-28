@@ -22,7 +22,7 @@ enum TaskStatus: string
     {
         return match ($status) {
             'ticketed', 'shaping', 'written', 'approved', 'building', 'in-progress' => self::Running,
-            'needs-decision', 'escalated' => self::NeedsAttention,
+            'needs-decision', 'escalated', 'unreadable' => self::NeedsAttention,
             'in-review' => self::InReview,
             'merged', 'closed', 'done', 'imported' => self::Done,
             default => null,

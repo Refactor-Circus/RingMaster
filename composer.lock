@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "bbe825ca58a0027bab401c83af147165",
+    "content-hash": "10e3b5fc9a67efb550472923b9e04178",
     "packages": [
         {
             "name": "brick/math",
@@ -3474,10 +3474,16 @@
         {
             "name": "refactor-circus/ringside",
             "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Refactor-Circus/Ringside.git",
+                "reference": "82f20941e795d7877d9d4c5734645a8966e5072f"
+            },
             "dist": {
-                "type": "path",
-                "url": "../../Projects/packages/Ringside",
-                "reference": "18b10d0dda53298f939fdedd4500fae287a479ff"
+                "type": "zip",
+                "url": "https://api.github.com/repos/Refactor-Circus/Ringside/zipball/82f20941e795d7877d9d4c5734645a8966e5072f",
+                "reference": "82f20941e795d7877d9d4c5734645a8966e5072f",
+                "shasum": ""
             },
             "require": {
                 "composer-plugin-api": "^2.0",
@@ -3491,6 +3497,7 @@
                 "pestphp/pest": "^5.3.1",
                 "phpstan/phpstan": "^2.1"
             },
+            "default-branch": true,
             "bin": [
                 "bin/ringside"
             ],
@@ -3510,6 +3517,9 @@
                 }
             },
             "scripts": {
+                "post-autoload-dump": [
+                    "@php -r \"is_dir('vendor/bin') || mkdir('vendor/bin', 0777, true); file_exists('vendor/bin/ringside') || @symlink('../../bin/ringside', 'vendor/bin/ringside');\""
+                ],
                 "lint": [
                     "vendor/bin/pint --parallel"
                 ],
@@ -3547,10 +3557,11 @@
                 "ringside",
                 "standards"
             ],
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "support": {
+                "source": "https://github.com/Refactor-Circus/Ringside/tree/main",
+                "issues": "https://github.com/Refactor-Circus/Ringside/issues"
+            },
+            "time": "2026-10-28T04:24:56+00:00"
         },
         {
             "name": "symfony/clock",

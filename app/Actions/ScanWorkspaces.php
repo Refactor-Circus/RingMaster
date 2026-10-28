@@ -11,6 +11,7 @@ use App\Models\Project;
 use App\Models\Spec;
 use App\Models\Task;
 use App\Models\Workspace;
+use App\Support\ActionLinks;
 use App\Support\JobActivity;
 use App\Support\Notifier;
 use App\Support\ProjectDiscovery;
@@ -164,6 +165,11 @@ final class ScanWorkspaces
             }
         }
 
+        if (FixSpecStatus::unknown($spec->status) || $spec->status === FixSpecStatus::UNREADABLE) {
+            $error = is_string($data['meta_error'] ?? null) ? $data['meta_error'] : null;
+            $present[] = $this->upsertItem($spec, FixSpecStatus::KEY.$spec->status.($error === null ? '' : ':'.substr(sha1($error), 0, 12)), FixSpecStatus::attributes($spec, $error));
+        }
+
         if ($spec->status === 'escalated') {
             $reasons = trim((string) $spec->project->ringside()->read($spec->dir.'/decision.md'));
 
@@ -171,7 +177,7 @@ final class ScanWorkspaces
             $present[] = $this->upsertItem($spec, 'escalation:'.substr(sha1($reasons), 0, 16), [
                 'kind' => AttentionKind::Escalation,
                 'question' => 'The factory escalated this job. Accept it as it stands, or send it back with a note?',
-                'options' => [AttentionKind::APPROVE, AttentionKind::REWORK],
+                'options' => [AttentionKind::APPROVE, AttentionKind::REWORK, AttentionKind::VARIANTS],
                 'recommendation' => null,
                 'evidence' => Str::limit($reasons, 2000),
                 'source' => 'build',
@@ -236,7 +242,26 @@ final class ScanWorkspaces
         $this->notifier->send(
             $count === 1 ? '1 thing needs you' : "{$count} things need you",
             array_map(fn (AttentionItem $item): string => $item->spec->project->folder.': '.Str::limit($item->question, 120), array_slice($raised, 0, 10)),
+            '/inbox',
+            $count === 1 ? $this->buttons($raised[0]) : [],
         );
+    }
+
+    /**
+     * Answer buttons for a lone new item: each option of a decision with at
+     * most three, or approving an escalation (sending back needs a note).
+     *
+     * @return list<array{label: string, url: string}|null>
+     */
+    private function buttons(AttentionItem $item): array
+    {
+        if ($item->kind === AttentionKind::Escalation) {
+            return in_array(AttentionKind::APPROVE, $item->options, true) ? [ActionLinks::make('answer', $item->id, AttentionKind::APPROVE, ['answer' => AttentionKind::APPROVE])] : [];
+        }
+
+        $options = $item->orderedOptions();
+
+        return count($options) <= 3 ? array_map(fn (string $option): ?array => ActionLinks::make('answer', $item->id, $option, ['answer' => $option]), $options) : [];
     }
 
     /**

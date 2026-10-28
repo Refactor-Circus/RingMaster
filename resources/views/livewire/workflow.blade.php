@@ -103,6 +103,17 @@
                 <div class="rm-mono text-[10px] text-zinc-500">findings at or above the rework threshold → rework → back to the gate</div>
             </div>
 
+            @if ($factory['after'] !== [])
+                <div class="space-y-2" data-after>
+                    <div class="rm-kicker text-zinc-400">then, once it would approve</div>
+                    <div class="grid gap-4 md:grid-cols-2">
+                        @foreach ($factory['after'] as $step)
+                            @include('livewire.partials.workflow-step', ['step' => $step, 'n' => count($factory['once']) + count($factory['loop']) + $loop->iteration])
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+
             <div>
                 <div class="rm-kicker mb-2 text-zinc-400">A run ends with</div>
                 <div class="grid gap-3 md:grid-cols-3">
@@ -129,6 +140,33 @@
                     @endforeach
                 </div>
             </div>
+        </section>
+
+        <section aria-label="Last 7 days" class="space-y-3" data-metrics>
+            <div class="flex items-center gap-2 px-1"><span class="rm-dot rm-tone-idle"></span><h2 class="rm-kicker text-zinc-300">Last 7 days</h2><span class="rm-mono text-[11px] text-zinc-500">{{ $current->is_workspace ? 'every package in this workspace' : $current->folder }}</span></div>
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                @foreach ([
+                    ['runs', $metrics['runs'], $metrics['running'].' running now'],
+                    ['succeeded', $metrics['runs'] > 0 ? round(100 * $metrics['succeeded'] / $metrics['runs']).'%' : '—', $metrics['succeeded'].' of '.$metrics['runs']],
+                    ['spent', '$'.number_format($metrics['cost'], 2), $metrics['jobs'] > 0 ? '$'.number_format($metrics['cost'] / $metrics['jobs'], 2).' per job' : 'no jobs'],
+                    ['median run', $metrics['median'] === null ? '—' : \Carbon\CarbonInterval::seconds($metrics['median'])->cascade()->forHumans(short: true), 'start to finish'],
+                    ['CI auto-fixes', $metrics['ci_fixes'], $metrics['refused'].' refused command(s)'],
+                ] as [$label, $value, $sub])
+                    <div class="rm-panel space-y-1 p-4">
+                        <div class="rm-kicker">{{ $label }}</div>
+                        <div class="text-2xl font-semibold text-white">{{ $value }}</div>
+                        <div class="rm-mono text-[11px] text-zinc-500">{{ $sub }}</div>
+                    </div>
+                @endforeach
+            </div>
+            @if ($metrics['failures'] !== [])
+                <div class="rm-mono flex flex-wrap gap-x-5 gap-y-1 px-1 text-[11px] text-zinc-400">
+                    <span class="text-zinc-500">failed runs:</span>
+                    @foreach ($metrics['failures'] as $label => $count)
+                        <span>{{ $label }} ×{{ $count }}</span>
+                    @endforeach
+                </div>
+            @endif
         </section>
 
         <p class="text-xs text-zinc-500">Any stage that hits a design question stops and asks you in the Inbox; your answer resumes the job where it stopped. A merged PR is noticed within five minutes and moves the job to its post-mortem.</p>

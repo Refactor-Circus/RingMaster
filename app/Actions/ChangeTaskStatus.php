@@ -2,9 +2,11 @@
 
 namespace App\Actions;
 
+use App\Enums\AttentionStatus;
 use App\Enums\RunStatus;
 use App\Enums\TaskStatus;
 use App\Models\Activity;
+use App\Models\AttentionItem;
 use App\Models\Task;
 use Illuminate\Validation\ValidationException;
 
@@ -17,6 +19,21 @@ final class ChangeTaskStatus
     {
         if (! $task->status->isOpen()) {
             throw ValidationException::withMessages(['status' => 'Only an open task can be cancelled.']);
+        }
+
+        // Its spec's questions and answers go with it, so an answers session never acts for a cancelled job.
+        if ($task->spec_id !== null && ! Task::query()->where('spec_id', $task->spec_id)->whereKeyNot($task->id)->whereIn('status', TaskStatus::open())->exists()) {
+            AttentionItem::query()->where('spec_id', $task->spec_id)->whereIn('status', [AttentionStatus::Open, AttentionStatus::Answered])->update(['status' => AttentionStatus::Closed, 'closed_at' => now()]);
+        }
+
+        // A task waiting on it would wait forever: it is paused with a note, as when you decline a follow-up.
+        foreach ($task->dependents as $dependent) {
+            $task->dependents()->detach($dependent->id);
+            $dependent->update([
+                'paused_at' => $dependent->paused_at ?? now(),
+                'pause_reason' => "The task it waited on was cancelled (#{$task->id}: {$task->title}). Resume it when it can go on.",
+            ]);
+            Activity::record('task.paused', "Paused: #{$task->id} it waited on was cancelled", $dependent);
         }
 
         return $this->move($task, TaskStatus::Cancelled, 'Cancelled');
@@ -69,9 +86,10 @@ final class ChangeTaskStatus
             throw ValidationException::withMessages(['status' => 'Only a paused or blocked task can be resumed.']);
         }
 
-        // Resuming a blocked task overrides the wait on its blocker.
-        $task->fill(['paused_at' => null, 'pause_reason' => null, 'blocked_by_task_id' => null]);
+        // Resuming a blocked task overrides the wait on what it depends on.
+        $task->fill(['paused_at' => null, 'pause_reason' => null]);
         $task->save();
+        $task->dependencies()->detach();
         Activity::record('task.resumed', 'Resumed', $task);
 
         return $task;
@@ -88,7 +106,8 @@ final class ChangeTaskStatus
         }
 
         $stopped = $this->stopRuns($task);
-        $task->fill(['claimed_by' => null, 'claimed_at' => null, 'lease_expires_at' => null, 'attempts' => 0, 'paused_at' => null, 'pause_reason' => null, 'blocked_by_task_id' => null]);
+        $task->fill(['claimed_by' => null, 'claimed_at' => null, 'lease_expires_at' => null, 'attempts' => 0, 'paused_at' => null, 'pause_reason' => null]);
+        $task->dependencies()->detach();
 
         return $this->move($task, TaskStatus::Queued, 'Restarted'.($stopped > 0 ? '; stopped its running session' : ''));
     }

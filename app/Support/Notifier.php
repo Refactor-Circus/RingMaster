@@ -15,8 +15,9 @@ final class Notifier
 {
     /**
      * @param  list<string>  $lines
+     * @param  list<array{label: string, url: string}|null>  $actions  from ActionLinks::make(); nulls are dropped
      */
-    public function send(string $title, array $lines, string $path = '/inbox'): void
+    public function send(string $title, array $lines, string $path = '/inbox', array $actions = []): void
     {
         if (config('ring-master.notifications.channels', []) === []) {
             return;
@@ -24,7 +25,7 @@ final class Notifier
 
         $url = rtrim((string) config('ring-master.notifications.app_url'), '/').$path;
 
-        $notification = new NeedsYou($title, $lines, $url);
+        $notification = new NeedsYou($title, $lines, $url, actions: array_values(array_filter($actions)));
         $to = Notification::route('mail', (string) config('ring-master.notifications.mail_to'));
 
         foreach ($notification->via($to) as $channel) {

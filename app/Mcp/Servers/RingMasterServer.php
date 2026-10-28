@@ -7,9 +7,12 @@ use App\Mcp\Tools\Heartbeat;
 use App\Mcp\Tools\LinkSpec;
 use App\Mcp\Tools\NextTask;
 use App\Mcp\Tools\PendingAnswers;
+use App\Mcp\Tools\Precedents;
+use App\Mcp\Tools\ProposeImprovement;
 use App\Mcp\Tools\ProposeTask;
 use App\Mcp\Tools\QueueStatus;
 use App\Mcp\Tools\ReleaseTask;
+use App\Mcp\Tools\SuggestTask;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
@@ -27,6 +30,8 @@ Work through it with the /ring-master-inbox skill:
 4. If you cannot finish, release-task with the reason (failed: true when it cannot be done as asked).
 5. If the task needs a separate job first (a fix in another package, say), propose-task it, then release-task. Never start that job yourself: the user accepts it in the Inbox, and your task resumes once it is done.
 6. A claimed task with a resume_note: do what the note says before anything else.
+7. A planner session (its prompt says so) only reads, and suggests jobs with suggest-task. A factory analyst session only reads, and proposes changes to the factory with propose-improvement.
+8. Before asking the user an architectural question, call precedents with it: if they answered one like it, recommend the matching option and cite the precedent first in the evidence. Still ask.
 
 Never answer an architectural question yourself, and never merge.
 TEXT)]
@@ -41,6 +46,9 @@ class RingMasterServer extends Server
         LinkSpec::class,
         ReleaseTask::class,
         ProposeTask::class,
+        SuggestTask::class,
+        Precedents::class,
+        ProposeImprovement::class,
     ];
 
     protected array $resources = [];

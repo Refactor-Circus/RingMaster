@@ -1,9 +1,14 @@
 <?php
 
+use App\Http\Controllers\ActionController;
 use App\Livewire\Board;
+use App\Livewire\Campaigns;
+use App\Livewire\Factory;
 use App\Livewire\Inbox;
 use App\Livewire\Runs;
 use App\Livewire\Settings;
+use App\Livewire\ShowBriefing;
+use App\Livewire\ShowCampaign;
 use App\Livewire\ShowRun;
 use App\Livewire\ShowSpec;
 use App\Livewire\ShowTask;
@@ -22,3 +27,12 @@ Route::get('/runs/{run}', ShowRun::class)->name('runs.show');
 Route::get('/workflow', Workflow::class)->name('workflow');
 Route::get('/workspaces', Workspaces::class)->name('workspaces');
 Route::get('/settings', Settings::class)->name('settings');
+Route::get('/briefing', ShowBriefing::class)->name('briefing');
+Route::get('/briefing/{briefing}', ShowBriefing::class)->name('briefing.show');
+Route::get('/campaigns', Campaigns::class)->name('campaigns');
+Route::get('/campaigns/{campaign}', ShowCampaign::class)->name('campaigns.show');
+Route::get('/factory', Factory::class)->name('factory');
+
+// Notification buttons: signed, single use; GET confirms, POST acts.
+Route::get('/act/{token}', [ActionController::class, 'show'])->name('act');
+Route::post('/act/{token}', [ActionController::class, 'perform'])->name('act.perform');

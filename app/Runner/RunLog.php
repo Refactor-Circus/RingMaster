@@ -43,7 +43,9 @@ final class RunLog
     /**
      * The final result event, or null while the run is still going.
      *
-     * @return array{text: string, is_error: bool, cost_usd: ?float}|null
+     * refused lists the calls the allowlist denied, as "Bash: <command>" or the tool name.
+     *
+     * @return array{text: string, is_error: bool, cost_usd: ?float, subtype: string, refused: list<string>}|null
      */
     public function result(string $path): ?array
     {
@@ -55,11 +57,58 @@ final class RunLog
                     'text' => is_string($event['result'] ?? null) ? $event['result'] : '',
                     'is_error' => (bool) ($event['is_error'] ?? false),
                     'cost_usd' => is_numeric($event['total_cost_usd'] ?? null) ? (float) $event['total_cost_usd'] : null,
+                    'subtype' => is_string($event['subtype'] ?? null) ? $event['subtype'] : '',
+                    'refused' => self::refused($event['permission_denials'] ?? null),
                 ];
             }
         }
 
         return $result;
+    }
+
+    /**
+     * The allowlist entry that would let a refused call through, or why none
+     * should: a compound or absolute-path command is split or rewritten, never allowed.
+     */
+    public static function suggestion(string $refused): string
+    {
+        if (! str_starts_with($refused, 'Bash: ')) {
+            return $refused;
+        }
+
+        $command = trim(substr($refused, 6));
+
+        return match (true) {
+            (bool) preg_match('/&&|\|\||;|\||\$\(|`/', $command) => 'compound command: split it into one call each',
+            str_starts_with($command, '/') || str_starts_with($command, '~') => 'absolute path: call it through composer exec or a relative path',
+            default => 'Bash('.strtok($command, " \t").' *)',
+        };
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function refused(mixed $denials): array
+    {
+        if (! is_array($denials)) {
+            return [];
+        }
+
+        $refused = [];
+
+        foreach ($denials as $denial) {
+            if (! is_array($denial)) {
+                continue;
+            }
+
+            $tool = is_string($denial['tool_name'] ?? null) ? $denial['tool_name'] : 'tool';
+            $input = is_array($denial['tool_input'] ?? null) ? $denial['tool_input'] : [];
+            $refused[] = $tool === 'Bash' && is_string($input['command'] ?? null)
+                ? 'Bash: '.mb_strimwidth(str_replace("\n", ' ', $input['command']), 0, 300, '…')
+                : $tool;
+        }
+
+        return $refused;
     }
 
     /**

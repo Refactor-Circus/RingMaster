@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Notifications\Channels\DesktopChannel;
+use App\Notifications\Channels\NtfyChannel;
 use App\Notifications\Channels\WebhookChannel;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
@@ -15,12 +16,14 @@ class NeedsYou extends Notification
 {
     /**
      * @param  list<string>  $lines
+     * @param  list<array{label: string, url: string}>  $actions  single-use buttons (ntfy shows them; mail lists them)
      */
     public function __construct(
         public readonly string $title,
         public readonly array $lines,
         public readonly string $url,
         public readonly ?string $only = null,
+        public readonly array $actions = [],
     ) {}
 
     /**
@@ -28,7 +31,7 @@ class NeedsYou extends Notification
      */
     public function on(string $channel): self
     {
-        return new self($this->title, $this->lines, $this->url, $channel);
+        return new self($this->title, $this->lines, $this->url, $channel, $this->actions);
     }
 
     /**
@@ -47,6 +50,7 @@ class NeedsYou extends Notification
             'mail' => config('ring-master.notifications.mail_to') ? 'mail' : null,
             'webhook' => config('ring-master.notifications.webhook_url') ? WebhookChannel::class : null,
             'desktop' => DesktopChannel::class,
+            'ntfy' => config('ring-master.notifications.ntfy_url') ? NtfyChannel::class : null,
             default => null,
         }, $channels)));
     }
@@ -57,6 +61,10 @@ class NeedsYou extends Notification
 
         foreach ($this->lines as $line) {
             $mail->line('• '.$line);
+        }
+
+        foreach ($this->actions as $action) {
+            $mail->line("{$action['label']}: {$action['url']}");
         }
 
         return $mail->action('Open RingMaster', $this->url);

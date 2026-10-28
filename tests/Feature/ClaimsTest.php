@@ -5,6 +5,7 @@ use App\Actions\ChangeTaskStatus;
 use App\Actions\ClaimTasks;
 use App\Actions\CreateTask;
 use App\Actions\ScanWorkspaces;
+use App\Actions\TaskDependencies;
 use App\Enums\TaskKind;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
@@ -181,6 +182,32 @@ it('resumes a task whose session stopped while its spec was in an interactive st
     expect($claims->candidates(10)->pluck('id')->all())->toBe([]);
 });
 
+it('resumes a job whose answers were recorded but whose stage was never relaunched, once', function () {
+    $claims = app(ClaimTasks::class);
+    $claims->claim($this->task->id, 'beta-1');
+    $dir = 'Beta/docs/agent/specs/2026-10-24-0900-exports';
+    rewriteFixture($this->root, "{$dir}/meta.yml", "title: Exports\nstatus: needs-decision\n");
+    rewriteFixture($this->root, "{$dir}/questions.yml", "- id: Q-001\n  question: Create the ticket as drafted?\n  options: [Create as drafted, Redraft]\n  source: ticket\n");
+    $claims->linkSpec($this->task->id, 'beta-1', '2026-10-24-0900-exports');
+    app(ScanWorkspaces::class)->handle();
+    app(AnswerAttentionItem::class)->handle(AttentionItem::query()->where('question', 'Create the ticket as drafted?')->sole(), 'Create as drafted');
+    $this->travel(11)->minutes();
+
+    expect($claims->candidates(10)->pluck('id')->all())->toBe([]);
+
+    // The answers session records the answer, empties questions.yml and stops.
+    rewriteFixture($this->root, "{$dir}/questions.yml", "[]\n");
+    app(ScanWorkspaces::class)->handle();
+
+    expect($this->task->fresh()->status)->toBe(TaskStatus::NeedsAttention)
+        ->and($claims->candidates(10)->pluck('id')->all())->toBe([$this->task->id]);
+
+    $claims->claim($this->task->id, 'runner-2');
+    $this->travel(11)->minutes();
+
+    expect($claims->candidates(10)->pluck('id')->all())->toBe([]);
+});
+
 it('resumes a building job only once its spec folder and worktree have been quiet for the stall window', function () {
     config(['ring-master.claims.building_stall_minutes' => 60]);
     $claims = app(ClaimTasks::class);
@@ -245,4 +272,38 @@ it('never offers a paused task, and leaves paused tasks out of the queue count',
         ->and(fn () => app(ClaimTasks::class)->claim($this->task->id, 'beta-1'))->toThrow(ValidationException::class);
 
     RingMasterServer::tool(QueueStatus::class, ['project_path' => $this->beta->path])->assertSee('"queued":0');
+});
+
+it('pauses a task without a spec that keeps being handed back, instead of queueing it again', function () {
+    $claims = app(ClaimTasks::class);
+
+    foreach ([1, 2] as $attempt) {
+        $claims->claim($this->task->id, "runner-{$attempt}");
+        $this->task->increment('attempts');
+        $claims->release($this->task->id, "runner-{$attempt}", 'The fix belongs to another job');
+    }
+
+    expect($this->task->fresh())->status->toBe(TaskStatus::Queued)->isPaused()->toBeTrue()->attempts->toBe(0)
+        ->pause_reason->toContain('Handed back 2 times')->toContain('The fix belongs to another job')
+        ->and($claims->candidates(10))->toBeEmpty();
+});
+
+it('pauses a task that waited on one you cancelled, instead of leaving it waiting forever', function () {
+    $blocker = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Blocker');
+    app(TaskDependencies::class)->add($this->task, $blocker);
+
+    app(ChangeTaskStatus::class)->cancel($blocker);
+
+    expect($this->task->fresh())->dependencies->toBeEmpty()->isPaused()->toBeTrue()
+        ->pause_reason->toContain("#{$blocker->id}");
+});
+
+it('refuses to link a second open task to a spec another task already works on', function () {
+    $claims = app(ClaimTasks::class);
+    $claims->claim($this->task->id, 'beta-1');
+    $claims->linkSpec($this->task->id, 'beta-1', '2026-10-24-0900-exports');
+    $other = app(CreateTask::class)->handle($this->beta, TaskKind::Idea, 'Fix the PR');
+    $claims->claim($other->id, 'beta-2');
+
+    expect(fn () => $claims->linkSpec($other->id, 'beta-2', '2026-10-24-0900-exports'))->toThrow(ValidationException::class, "Task #{$this->task->id} already works on spec");
 });

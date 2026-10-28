@@ -23,11 +23,14 @@
                 </a>
 
                 <nav class="flex flex-col gap-1">
+                    <x-rm.nav-link :href="route('briefing')" icon="sun" :current="request()->routeIs('briefing', 'briefing.show')">Briefing</x-rm.nav-link>
                     <x-rm.nav-link :href="route('board')" icon="view-columns" :current="request()->routeIs('board', 'specs.show')">Board</x-rm.nav-link>
                     <x-rm.nav-link :href="route('inbox')" icon="inbox" :current="request()->routeIs('inbox')" :badge="$waitingOnYou ?: null" count="inbox" tone="wait">Inbox</x-rm.nav-link>
                     <x-rm.nav-link :href="route('tasks')" icon="queue-list" :current="request()->routeIs('tasks', 'tasks.show')" :badge="$queued ?: null" count="queued" tone="live">Tasks</x-rm.nav-link>
                     <x-rm.nav-link :href="route('runs')" icon="cpu-chip" :current="request()->routeIs('runs', 'runs.show')">Runs</x-rm.nav-link>
+                    <x-rm.nav-link :href="route('campaigns')" icon="flag" :current="request()->routeIs('campaigns', 'campaigns.show')">Campaigns</x-rm.nav-link>
                     <x-rm.nav-link :href="route('workflow')" icon="arrow-path-rounded-square" :current="request()->routeIs('workflow')">Workflow</x-rm.nav-link>
+                    <x-rm.nav-link :href="route('factory')" icon="beaker" :current="request()->routeIs('factory')">Factory</x-rm.nav-link>
                     <x-rm.nav-link :href="route('workspaces')" icon="folder" :current="request()->routeIs('workspaces')">Workspaces</x-rm.nav-link>
                 </nav>
 
@@ -54,14 +57,14 @@
                             <kbd class="rm-mono hidden rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-400 sm:inline">⌘K</kbd>
                         </button>
 
-                        <div class="ml-auto hidden items-center gap-2 sm:flex">
-                            <span class="rm-dot rm-tone-live rm-dot-ping"></span>
-                            <span class="rm-kicker">live</span>
-                        </div>
+                        <a href="{{ route('runs') }}" wire:navigate class="ml-auto hidden items-center gap-2 sm:flex" title="Runner {{ ['live' => 'online', 'wait' => 'paused', 'idle' => 'offline'][$runner] }}">
+                            <span @class(['rm-dot', 'rm-tone-'.$runner, 'rm-dot-ping' => $runner === 'live'])></span>
+                            <span class="rm-kicker">{{ ['live' => 'live', 'wait' => 'paused', 'idle' => 'offline'][$runner] }}</span>
+                        </a>
                     </div>
 
                     <nav class="flex gap-1 overflow-x-auto px-3 pb-2 lg:hidden">
-                        @foreach ([['board', 'Board', ['board', 'specs.show']], ['inbox', 'Inbox', ['inbox']], ['tasks', 'Tasks', ['tasks', 'tasks.show']], ['runs', 'Runs', ['runs', 'runs.show']], ['workspaces', 'Workspaces', ['workspaces']], ['settings', 'Settings', ['settings']]] as [$route, $label, $active])
+                        @foreach ([['briefing', 'Briefing', ['briefing', 'briefing.show']], ['board', 'Board', ['board', 'specs.show']], ['inbox', 'Inbox', ['inbox']], ['tasks', 'Tasks', ['tasks', 'tasks.show']], ['runs', 'Runs', ['runs', 'runs.show']], ['campaigns', 'Campaigns', ['campaigns', 'campaigns.show']], ['factory', 'Factory', ['factory']], ['workspaces', 'Workspaces', ['workspaces']], ['settings', 'Settings', ['settings']]] as [$route, $label, $active])
                             <a href="{{ route($route) }}" wire:navigate @class(['rm-mono shrink-0 rounded-lg px-3 py-1.5 text-xs', 'bg-white/10 text-white' => request()->routeIs(...$active), 'text-zinc-400' => ! request()->routeIs(...$active)])>{{ $label }}@if ($route === 'inbox')<span x-data="{ n: {{ (int) $waitingOnYou }} }" x-on:ring-master-counts.window="n = $event.detail.inbox" x-show="n > 0" @unless ($waitingOnYou) style="display: none" @endunless> · <span x-text="n">{{ $waitingOnYou }}</span></span>@endif</a>
                         @endforeach
                     </nav>

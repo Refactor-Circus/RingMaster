@@ -77,6 +77,15 @@
                 @endforeach
             </flux:select>
 
+            @if ($waitable->isNotEmpty())
+                <flux:select wire:model="dependsOn" label="Waits on" description="It stays in the queue until that task is done or its PR is merged. Add more on the task's page.">
+                    <flux:select.option value="">Nothing: start when a slot is free</flux:select.option>
+                    @foreach ($waitable as $other)
+                        <flux:select.option :value="$other->id">#{{ $other->id }} {{ $other->project->folder }}: {{ $other->title }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            @endif
+
             <div class="flex justify-end gap-2">
                 <flux:modal.close><flux:button variant="ghost">Cancel</flux:button></flux:modal.close>
                 <flux:button type="submit" variant="primary">Queue it</flux:button>

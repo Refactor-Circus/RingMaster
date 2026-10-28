@@ -6,6 +6,7 @@ use App\Enums\AttentionKind;
 use App\Enums\AttentionStatus;
 use App\Enums\TaskStatus;
 use App\Livewire\AnswerItem;
+use App\Livewire\Inbox;
 use App\Livewire\NavCounter;
 use App\Livewire\ShowSpec;
 use App\Models\Activity;
@@ -51,7 +52,7 @@ it('raises an escalation with approve and send-back options and the reasons as e
 
     $escalation = AttentionItem::query()->where('kind', AttentionKind::Escalation)->sole();
 
-    expect($escalation->options)->toBe([AttentionKind::APPROVE, AttentionKind::REWORK])
+    expect($escalation->options)->toBe([AttentionKind::APPROVE, AttentionKind::REWORK, AttentionKind::VARIANTS])
         ->and($escalation->evidence)->toContain('No progress in two rounds.')
         ->and(AttentionItem::query()->where('kind', AttentionKind::Decision)->pluck('status')->unique()->all())->toBe([AttentionStatus::Closed]);
 });
@@ -185,4 +186,47 @@ it('pushes the navigation counts to the page as they change', function () {
     Livewire::test(NavCounter::class)
         ->call('check')
         ->assertDispatched('ring-master-counts', inbox: 1, queued: 0);
+});
+
+it('raises a spec status Ringside does not know, and sets the one you choose in meta.yml itself', function () {
+    $meta = 'Beta/docs/agent/specs/2026-10-24-0900-exports/meta.yml';
+    rewriteFixture($this->root, $meta, "title: Exports\nstatus: shaped\n");
+    app(ScanWorkspaces::class)->handle();
+
+    $item = AttentionItem::query()->where('source', 'status')->sole();
+    expect($item->kind)->toBe(AttentionKind::Escalation)
+        ->and($item->question)->toContain('`status: shaped`')
+        ->and($item->options)->toContain('Build it (approved)');
+
+    app(AnswerAttentionItem::class)->handle($item, 'Build it (approved)');
+
+    expect(file_get_contents($this->root.'/'.$meta))->toBe("title: Exports\nstatus: approved\n")
+        ->and($item->fresh()->status)->toBe(AttentionStatus::Closed);
+
+    app(ScanWorkspaces::class)->handle();
+    expect(Spec::query()->where('key', '2026-10-24-0900-exports')->sole()->status)->toBe('approved')
+        ->and(AttentionItem::query()->where('source', 'status')->where('status', AttentionStatus::Open)->exists())->toBeFalse();
+});
+
+it('says in the Inbox why answers are not being applied yet', function () {
+    $item = AttentionItem::query()->where('kind', AttentionKind::Decision)->firstOrFail();
+    app(AnswerAttentionItem::class)->handle($item, $item->options[0]);
+
+    Livewire::test(Inbox::class)->assertSee('Answered, waiting for Claude')
+        ->assertSee('No runner is running');
+});
+
+it('raises a spec whose meta.yml is not valid YAML in the Inbox, and scans every other spec as usual', function () {
+    rewriteFixture($this->root, 'Beta/docs/agent/specs/2026-10-24-0900-exports/meta.yml', "title: Exports\nreview_passes: 2created: 2026-10-27\n");
+
+    app(ScanWorkspaces::class)->handle();
+
+    $item = AttentionItem::query()->where('source', 'status')->sole();
+    expect(Spec::query()->where('key', '2026-10-24-0900-exports')->sole()->status)->toBe('unreadable')
+        ->and($item->question)->toContain('not valid YAML')
+        ->and($item->evidence)->toContain('colon cannot be used')
+        ->and(Spec::query()->where('status', '!=', 'unreadable')->count())->toBeGreaterThan(0);
+
+    app(AnswerAttentionItem::class)->handle($item, 'I fixed the file');
+    expect($item->fresh()->status)->toBe(AttentionStatus::Closed);
 });
