@@ -3477,7 +3477,7 @@
             "dist": {
                 "type": "path",
                 "url": "../../Projects/packages/Ringside",
-                "reference": "18b10d0dda53298f939fdedd4500fae287a479ff"
+                "reference": "f2f488daa0e1e3ead6492aaa25d939a7c0f9be03"
             },
             "require": {
                 "composer-plugin-api": "^2.0",
@@ -3510,6 +3510,9 @@
                 }
             },
             "scripts": {
+                "post-autoload-dump": [
+                    "@php -r \"is_dir('vendor/bin') || mkdir('vendor/bin', 0777, true); file_exists('vendor/bin/ringside') || @symlink('../../bin/ringside', 'vendor/bin/ringside');\""
+                ],
                 "lint": [
                     "vendor/bin/pint --parallel"
                 ],

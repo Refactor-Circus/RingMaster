@@ -32,6 +32,9 @@ final readonly class WorkflowMap
         'gate' => 'Runs the verify and format checks and ringside check in the worktree, and maps every acceptance criterion to the test that proves it. A red gate skips the reviewers; its failures become blockers to fix.',
         'review' => 'Each reviewer reads the diff through its own lens and returns findings with severities, plus any design questions for you.',
         'triage' => 'Merges duplicate findings from the reviewers and may move one a step in severity, never to or from architectural. Runs only when there is more than one finding.',
+        'integrate' => 'When groups of a wave were built in parallel, each in its own worktree, one agent merges their branches into the job branch, resolves the conflicts, runs the tests and commits.',
+        'impact' => 'Before the PR, runs the tests of every package that uses this one against the job branch, in parallel. A package it breaks gets a proposed fix task that starts once this PR is merged.',
+        'brief' => 'Once it would approve, writes brief.md for you: what changed, why, the few places to look at, which tests prove what, the risks, and a low, medium or high risk call. The PR starts with it and the briefing ranks by it.',
         'rework' => 'Fixes the findings at or above the rework threshold, runs the tests and commits, then the next round starts at the gate. Architectural findings are never fixed here: they come to you.',
     ];
 
@@ -105,7 +108,7 @@ final readonly class WorkflowMap
      * The factory's steps: prepare and build once, then gate, review and
      * rework in rounds.
      *
-     * @return array{once: list<Step>, loop: list<Step>, rounds: list<Fact>}
+     * @return array{once: list<Step>, loop: list<Step>, after: list<Step>, rounds: list<Fact>}
      */
     public function factory(): array
     {
@@ -129,7 +132,10 @@ final readonly class WorkflowMap
                 $this->step('build', 'Build groups', 'implementer', [
                     $this->fact('max turns', 'roles.implementer.max_turns'),
                     $this->fact('tests', 'commands.test'),
+                    ['label' => 'groups', 'value' => $this->config->bool('build.parallel') ? 'parallel, own worktree each, up to '.$this->config->int('build.max_concurrency') : 'one at a time', 'set' => $this->set('build.parallel')],
+                    ['label' => 'variants', 'value' => $this->config->int('build.variants') > 1 ? $this->config->int('build.variants').' builds, judged by '.$this->roleFact('judge')['value'] : 'one build (a spec can ask for more; rebuild with '.$this->config->int('build.escalation_variants').' on escalation)', 'set' => $this->set('build.variants') || $this->set('build.escalation_variants')],
                 ]),
+                $this->step('integrate', 'Integrate', 'integrator', [], $this->config->bool('build.parallel') && $this->config->string('build.worktree.mode') === 'per-job', enable: 'build: { parallel: true }'),
             ],
             'loop' => [
                 $this->step('gate', 'Gate', 'gate', [
@@ -145,6 +151,12 @@ final readonly class WorkflowMap
                     $this->fact('fix from', 'review.rework_threshold'),
                     $this->fact('auto-fix', 'review.auto_fix'),
                 ]),
+            ],
+            'after' => [
+                $this->step('impact', 'Impact gate', 'impact', [
+                    ['label' => 'consumers', 'value' => $this->scalar($this->config->get('impact.consumers')), 'set' => $this->set('impact.consumers')],
+                ], $this->config->bool('impact.enabled') && $this->config->get('impact.consumers') !== 'off', enable: 'impact: { enabled: true }'),
+                $this->step('brief', 'Reviewer brief', 'briefer', []),
             ],
             'rounds' => [
                 $this->fact('max', 'review.rounds.max'),
@@ -238,7 +250,11 @@ final readonly class WorkflowMap
             isset($settings['effort']) ? $this->scalar($settings['effort']).' effort' : null,
         ]));
 
-        return ['label' => $label, 'value' => $value, 'set' => $this->set('roles.'.$role.'.model') || $this->set('roles.'.$role.'.effort')];
+        if (is_string($settings['escalate_model'] ?? null) && $settings['escalate_model'] !== ($settings['model'] ?? null)) {
+            $value .= ' → '.$settings['escalate_model'].' on retry';
+        }
+
+        return ['label' => $label, 'value' => $value, 'set' => $this->set('roles.'.$role.'.model') || $this->set('roles.'.$role.'.effort') || $this->set('roles.'.$role.'.escalate_model')];
     }
 
     private function scalar(mixed $value): string

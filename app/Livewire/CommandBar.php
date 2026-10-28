@@ -55,8 +55,8 @@ class CommandBar extends Component
             'specs' => $term === '' ? collect() : Spec::query()->with('project')->where('title', 'like', $like)->orderByDesc('spec_updated_at')->limit(5)->get(),
             'tasks' => $term === '' ? collect() : Task::query()->with('project')->where('title', 'like', $like)->latest()->limit(5)->get(),
             'pages' => collect([
-                ['Board', 'board', 'view-columns'], ['Inbox', 'inbox', 'inbox'], ['Tasks', 'tasks', 'queue-list'],
-                ['Runs', 'runs', 'cpu-chip'], ['Workspaces', 'workspaces', 'folder'], ['Settings', 'settings', 'cog-6-tooth'],
+                ['Briefing', 'briefing', 'sun'], ['Board', 'board', 'view-columns'], ['Inbox', 'inbox', 'inbox'], ['Tasks', 'tasks', 'queue-list'],
+                ['Runs', 'runs', 'cpu-chip'], ['Workflow', 'workflow', 'arrows-right-left'], ['Campaigns', 'campaigns', 'flag'], ['Factory', 'factory', 'beaker'], ['Workspaces', 'workspaces', 'folder'], ['Settings', 'settings', 'cog-6-tooth'],
             ])->filter(fn (array $page): bool => $term === '' || Str::contains($page[0], $term, ignoreCase: true))->values(),
         ]);
     }

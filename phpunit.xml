@@ -32,5 +32,9 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- Clock- and GitHub-driven features stay off unless a test turns them on. -->
+        <env name="RING_MASTER_NIGHT_SHIFT" value="false"/>
+        <env name="RING_MASTER_BRIEFING_AT" value="(empty)"/>
+        <env name="RING_MASTER_SIGNALS" value="false"/>
     </php>
 </phpunit>

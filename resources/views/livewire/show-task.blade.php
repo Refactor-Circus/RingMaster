@@ -51,17 +51,43 @@
             <div class="rm-panel rm-tone-wait rm-edge space-y-1 p-4" data-proposal>
                 <div class="rm-mono text-xs text-amber-300">Proposed by a session: nothing runs it until you accept it.</div>
                 <div class="whitespace-pre-line text-sm text-zinc-200">{{ $task->proposal_reason }}</div>
-                @foreach ($task->blocking as $waiter)
-                    <a href="{{ route('tasks.show', $waiter) }}" wire:navigate class="rm-mono block text-xs text-cyan-300 hover:underline">#{{ $waiter->id }} {{ $waiter->title }} waits on it</a>
+            </div>
+        @endif
+
+        @if ($task->isBlocked())
+            <div class="rm-panel rm-tone-wait rm-edge space-y-1 p-4" data-blocked>
+                <div class="rm-mono text-xs text-amber-300">Waiting on {{ $task->dependencies->count() === 1 ? 'another task' : $task->dependencies->count().' tasks' }}: it resumes by itself once each is done or has its PR merged.</div>
+                @foreach ($task->dependencies as $dependency)
+                    <div class="flex items-center gap-3" wire:key="dependency-{{ $dependency->id }}">
+                        <a href="{{ route('tasks.show', $dependency) }}" wire:navigate class="text-sm text-cyan-300 hover:underline">#{{ $dependency->id }} {{ $dependency->project->folder }}: {{ $dependency->title }} ({{ $dependency->statusLabel() }})</a>
+                        @if ($task->status->isOpen())
+                            <button type="button" wire:click="removeDependency({{ $dependency->id }})" class="rm-mono text-[10px] text-zinc-500 hover:text-rose-300">stop waiting</button>
+                        @endif
+                    </div>
                 @endforeach
             </div>
         @endif
 
-        @if ($task->isBlocked() && $task->blockedBy)
-            <div class="rm-panel rm-tone-wait rm-edge space-y-1 p-4" data-blocked>
-                <div class="rm-mono text-xs text-amber-300">Waiting on another task: it resumes by itself once that one is done or its PR is merged.</div>
-                <a href="{{ route('tasks.show', $task->blockedBy) }}" wire:navigate class="text-sm text-cyan-300 hover:underline">#{{ $task->blockedBy->id }} {{ $task->blockedBy->project->folder }}: {{ $task->blockedBy->title }} ({{ $task->blockedBy->statusLabel() }})</a>
+        @if ($task->dependents->isNotEmpty())
+            <div class="rm-panel rm-edge space-y-1 p-4" data-dependents>
+                <div class="rm-mono text-xs text-zinc-400">Waiting on this task</div>
+                @foreach ($task->dependents as $waiter)
+                    <a href="{{ route('tasks.show', $waiter) }}" wire:navigate class="rm-mono block text-xs text-cyan-300 hover:underline">#{{ $waiter->id }} {{ $waiter->project->folder }}: {{ $waiter->title }}</a>
+                @endforeach
             </div>
+        @endif
+
+        @if ($task->status->isOpen() && $candidates->isNotEmpty())
+            <form wire:submit="addDependency" class="flex flex-wrap items-end gap-2" data-add-dependency>
+                <flux:select wire:model="dependsOn" label="Wait on another task" size="sm" class="max-w-md">
+                    <flux:select.option value="">Choose a task…</flux:select.option>
+                    @foreach ($candidates as $candidate)
+                        <flux:select.option :value="$candidate->id">#{{ $candidate->id }} {{ $candidate->project->folder }}: {{ $candidate->title }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+                <flux:button type="submit" size="sm" icon="link">Add</flux:button>
+            </form>
+            <flux:error name="depends_on" />
         @endif
 
         @if ($task->isPaused() && ! $task->isBlocked())

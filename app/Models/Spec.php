@@ -31,12 +31,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property list<string> $files
  * @property CarbonImmutable|null $spec_updated_at
  * @property CarbonImmutable|null $pr_merged_at when the runner saw every PR merged
+ * @property int $ci_fixes times failing PR checks sent it back on their own
  * @property CarbonImmutable|null $activity_at last write to the spec folder or, while building, its worktree
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Project $project
  */
-#[Fillable(['project_id', 'key', 'dir', 'title', 'status', 'column', 'ticket', 'pr', 'branch', 'tasks_done', 'tasks_total', 'packages', 'rounds', 'decisions', 'decision', 'questions', 'files', 'spec_updated_at', 'activity_at', 'pr_merged_at'])]
+#[Fillable(['project_id', 'key', 'dir', 'title', 'status', 'column', 'ticket', 'pr', 'branch', 'tasks_done', 'tasks_total', 'packages', 'rounds', 'decisions', 'decision', 'questions', 'files', 'spec_updated_at', 'activity_at', 'pr_merged_at', 'ci_fixes'])]
 class Spec extends Model
 {
     /**

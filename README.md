@@ -1,87 +1,64 @@
 # RingMaster
 
-The board for [Ring Master](../packages/docs/agent/product/ring-master.md) jobs: every spec across your workspaces in one place, read from the spec folders that [Ringside](https://github.com/Refactor-Circus/Ringside) writes. It also holds a task queue and an inbox for the questions that need you, and an MCP server Claude sessions pick work up from.
+The control room for [Ring Master](https://github.com/Refactor-Circus/Ringside) jobs. Every spec across your workspaces on one board, read from the spec folders [Ringside](https://github.com/Refactor-Circus/Ringside) writes, plus:
 
-RingMaster is a local, single-user app. It reads your folders and never writes to them; spec folders stay the source of truth, and the database mirrors them.
+- a **task queue** of ideas, tickets and specs, with priorities and a **job graph** (tasks that wait on other tasks, across packages);
+- an **inbox** for everything that needs you: architectural questions, escalations, failing CI, proposed follow-up jobs, and chores on GitHub;
+- a **runner** that works the queue with headless Claude Code sessions, classes their failures, backs off on usage limits and auto-fixes failing PR checks;
+- a **janitor** that cleans up merged worktrees and branches and triages Dependabot PRs;
+- a **night shift** that works the queue overnight on a budget, and a **morning briefing** that ranks PRs by risk and reviews the low-risk ones in one click;
+- **campaigns**: one change across many packages, landing in dependency order;
+- **decision precedent**: your past architectural answers suggested for questions like them;
+- a **portfolio planner** that reads every package's roadmap and GitHub signals (issues, flaky checks) and suggests jobs;
+- a **self-improving factory**: an analyst proposes changes to the factory from the evidence of past jobs, and replays recent jobs against them before you adopt one;
+- **phone actions**: notification buttons (ntfy) that accept, approve or answer, through signed single-use links;
+- a **Workflow** page showing each project's stages, factory steps, models and last week's metrics;
+- an **MCP server** Claude sessions take work from.
 
-## Run it
+It is a local, single-user app with no login. Spec folders stay the source of truth; nothing merges on its own, and nothing changes on GitHub without your OK.
 
-```bash
-composer setup                 # install, .env, key, migrate, build assets
-php artisan serve              # http://127.0.0.1:8000, or let Herd or Valet serve the folder
-```
-
-Or `composer dev` for the server, queue, logs and Vite together. Keep it on 127.0.0.1: there is no login.
-
-## Workspaces
-
-Set the folders to scan in `.env` (comma-separated, `~` expands):
-
-```dotenv
-RING_MASTER_WORKSPACES=~/Projects/packages
-```
-
-or add them on the Workspaces page. A folder whose `ring-master.yml` lists `workspace.packages` contributes itself and those packages; a folder with its own `composer.json` is one project; any other folder contributes each subfolder that has a `composer.json`.
-
-An open board rescans when the last scan is older than `RING_MASTER_SCAN_STALE_AFTER` seconds (default 3), and `php artisan ring-master:scan` runs every minute from the scheduler (`php artisan schedule:work`).
-
-## Pages
-
-- **Board**: queued tasks, then one card per spec in its stage column (Ticket, Spec, Building, Needs you, In review, Done), with ticket, task progress, the latest round's verdict per reviewer and open questions. Filter by project or title.
-- **Inbox**: every open architectural question (from the spec's `questions.yml`) and escalated job, with its options, the recommendation and the evidence. Answer here; the answer waits until Claude applies it to the spec folder, and can change until then. Once the question leaves the folder it shows as applied, or as answered in a session if you answered it there.
-- **Tasks**: queue an idea, an existing ticket or an existing spec for a project, with a priority. Claude picks up the highest priority first, then the oldest. A task follows its spec's status once the spec exists, and its page shows its timeline and anything it waits on you for.
-- **Spec**: the spec folder's documents and every round's report, rendered from markdown with raw HTML escaped. Only files inside the spec folder are readable.
-- **Workspaces**: add, disable or remove folders and see what each contributes. Folders from `.env` can only be disabled.
-
-## Claude
-
-RingMaster's MCP server runs locally over stdio; Claude Code starts it on demand, so the web server does not have to be running. Add it once:
+## Quick start
 
 ```bash
-claude mcp add --scope user ring-master -- php ~/Herd/RingMaster/artisan mcp:start ring-master
+composer setup                                        # install, .env, key, migrate, build assets
+echo 'RING_MASTER_WORKSPACES=~/Projects/packages' >> .env
+php artisan serve                                     # or let Herd or Valet serve it
+claude mcp add --scope user ring-master -- php "$PWD/artisan" mcp:start ring-master
+php artisan ring-master:work                          # optional: the runner
 ```
 
-and point a project or workspace root at the app in its `ring-master.yml` (`board: { app: ~/Herd/RingMaster }`, Ringside 0.5+). Sessions there start with RingMaster's one-line summary, and `/ring-master-inbox` works through the queue:
+Then point each project at the app in its `ring-master.yml` (`board: { app: ~/Herd/RingMaster }`) and run `vendor/bin/ringside sync` there.
 
-1. `pending-answers`: applies the answers you gave here, so stopped jobs resume.
-2. `next-task` and `claim-task`: claims the next task (highest priority, then oldest) and ships it, unattended: any question a stage would ask you lands in the inbox.
-3. `link-spec` once the spec folder exists, `heartbeat` at each stage, `release-task` when it cannot finish.
+## Documentation
 
-A claim is a lease (`RING_MASTER_LEASE_SECONDS`, default 900) renewed by each heartbeat; if it runs out before a spec exists, the task goes back to the queue.
-
-## Runner
-
-`php artisan ring-master:work` works the queue without you: it starts headless Claude Code sessions (`claude -p`, on your Claude Code login; no API key needed) in each task's folder.
-
-- Answers you gave here go first, so stopped jobs resume; then queued tasks, highest priority first, then oldest. A job whose session stopped while its spec was being shaped, written or approved is resumed too.
-- One session per folder tree at a time (a workspace root and its packages never run together), up to `RING_MASTER_RUNNER_CONCURRENCY` (default 1).
-- Each session may use only `runner.allowed_tools` in `config/ring-master.php`; anything else is denied at once instead of prompting, so a session never hangs. Questions a stage would ask you land in the Inbox.
-- A job whose factory build stopped part-way is resumed once neither its spec folder nor its worktree changed for `RING_MASTER_BUILDING_STALL_MINUTES` (default 60); the factory skips the task groups already done.
-- Sessions run in a process session of their own: Ctrl+C in the runner's terminal stops it from starting new ones and lets the running ones finish; a second Ctrl+C stops them too. A runner that restarts adopts sessions still running and settles them when they end.
-- A task gets `RING_MASTER_RUNNER_MAX_ATTEMPTS` tries (default 2) before it is marked failed. `RING_MASTER_RUNNER_MODEL` and `RING_MASTER_RUNNER_MAX_BUDGET_USD` set the model and a per-session cost cap.
-- The Runs page shows whether the runner is up, pauses and resumes it, stops a run, and shows each run's log and cost. `--once` starts what can start, waits for it, and exits.
-
-Sessions draw on your plan's usage, so start with a concurrency of 1 and a budget cap.
-
-## Notifications
-
-RingMaster tells you when something needs you: new questions and escalations (one notification per scan, however many it found), a task that failed after its attempts, and answers a run could not apply. Pick channels in `.env`:
-
-```dotenv
-RING_MASTER_NOTIFY=desktop,webhook          # any of desktop, mail, webhook
-RING_MASTER_NOTIFY_MAIL=you@example.com     # mail: through Laravel's mailer (MAIL_* settings)
-RING_MASTER_NOTIFY_WEBHOOK=https://hooks.slack.com/services/…   # POSTs {"text": …}; Slack, Discord and ntfy accept it
-RING_MASTER_URL=http://127.0.0.1:8000       # where the links in notifications point
-```
-
-`desktop` uses `osascript` on macOS and `notify-send` on Linux. An open RingMaster tab can also show browser notifications: enable them on the Settings page, which also sends a test notification through your channels. A channel that fails is logged and never holds up the scan or the runner.
-
-Pages refresh themselves by polling (the board every 3 seconds; Livewire slows polling in background tabs), so no websocket server is needed.
+| | |
+| --- | --- |
+| [Getting started](docs/getting-started.md) | install, workspaces, Claude Code, the runner, your first job |
+| [Concepts](docs/concepts.md) | workspaces, projects, specs, tasks, attention items, runs, chores |
+| [Pages](docs/pages.md) | every screen and action |
+| [Tasks and the job graph](docs/tasks.md) | queueing, statuses, claims, attempts, dependencies, proposed jobs |
+| [Inbox](docs/inbox.md) | decisions, escalations, proposed jobs, chores |
+| [Runner](docs/runner.md) | scheduling, allowlist, failure classes, back-off, concurrency, recovery |
+| [Pull requests and CI](docs/pull-requests.md) | merge detection and CI auto-fix |
+| [Janitor and Dependabot](docs/janitor.md) | branch and worktree cleanup, Dependabot triage |
+| [Night shift and briefing](docs/briefing.md) | the overnight budget, the morning briefing, risk, reviewing from it |
+| [Campaigns](docs/campaigns.md) | one change across many packages |
+| [Decision precedent](docs/precedent.md) | past answers as suggestions |
+| [Portfolio planner](docs/planner.md) | suggested jobs across a workspace, and GitHub signals |
+| [The factory improving itself](docs/factory.md) | the analyst, improvements, replay evaluations |
+| [Phone actions](docs/phone.md) | notification buttons and how they are protected |
+| [Workflow and metrics](docs/workflow.md) | the Workflow page |
+| [MCP server](docs/mcp.md) | every tool, its parameters and results |
+| [Console commands](docs/commands.md) | `ring-master:*` and composer scripts |
+| [Configuration](docs/configuration.md) | every setting and `.env` variable |
+| [Notifications](docs/notifications.md) | desktop, mail, webhook, ntfy, browser |
+| [Troubleshooting](docs/troubleshooting.md) | why a task is not starting, failed runs, stuck jobs |
+| [Development](docs/development.md) | code layout, data, tests |
 
 ## Development
 
 ```bash
-composer test                  # pint --test, phpstan, pest
+composer test     # pint --test, phpstan, pest
 ```
 
-PHP 8.5, Laravel 13, Livewire 4 (class components in `app/Livewire`), Flux.
+PHP 8.5, Laravel 13, Livewire 4, Flux.

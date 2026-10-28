@@ -5,9 +5,12 @@ use App\Actions\ChangeTaskStatus;
 use App\Actions\ClaimTasks;
 use App\Actions\CreateTask;
 use App\Actions\ScanWorkspaces;
+use App\Actions\TaskDependencies;
 use App\Actions\TaskProposals;
 use App\Enums\AttentionKind;
 use App\Enums\AttentionStatus;
+use App\Enums\RunKind;
+use App\Enums\RunStatus;
 use App\Enums\TaskKind;
 use App\Enums\TaskStatus;
 use App\Livewire\Inbox;
@@ -15,7 +18,9 @@ use App\Livewire\ShowTask;
 use App\Mcp\Servers\RingMasterServer;
 use App\Mcp\Tools\ClaimTask;
 use App\Mcp\Tools\ProposeTask;
+use App\Mcp\Tools\SuggestTask;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\Spec;
 use App\Models\Task;
 use App\Support\PullRequests;
@@ -46,7 +51,7 @@ it('lets a session propose a follow-up its task waits on, which nothing runs unt
     app(ClaimTasks::class)->release($this->task->id, 'beta-1', 'Waiting on Alpha.');
 
     expect($proposal->project_id)->toBe($this->alpha->id)
-        ->and($this->task->fresh()->blocked_by_task_id)->toBe($proposal->id)
+        ->and($this->task->fresh()->dependencies->modelKeys())->toBe([$proposal->id])
         ->and($this->task->fresh()->statusLabel())->toBe('Blocked')
         ->and(app(ClaimTasks::class)->claimable($proposal->id))->toBeFalse()
         ->and(app(ClaimTasks::class)->claimable($this->task->id))->toBeFalse();
@@ -63,7 +68,24 @@ it('lets a session applying answers propose for an unclaimed task of its spec', 
 
     $proposal = app(TaskProposals::class)->propose($this->task->id, 'answers-1', 'Alpha', 'Drop unserialize', 'b', 'r');
 
-    expect($this->task->fresh()->blocked_by_task_id)->toBe($proposal->id);
+    expect($this->task->fresh()->dependencies->modelKeys())->toBe([$proposal->id]);
+});
+
+it('proposes a follow-up that waits for the proposing task instead, as for a package its change breaks', function () {
+    RingMasterServer::tool(ProposeTask::class, ['task_id' => $this->task->id, 'session' => 'beta-1', 'project' => 'Alpha', 'title' => 'Adapt Alpha to exports', 'body' => 'tests/Cortex fails.', 'reason' => 'The impact gate found Alpha broken.', 'waits_for_this' => true])->assertOk();
+
+    $proposal = Task::query()->where('status', TaskStatus::Proposed)->sole();
+    app(TaskProposals::class)->accept($proposal);
+
+    expect($this->task->fresh()->isBlocked())->toBeFalse()
+        ->and($proposal->fresh()->dependencies->modelKeys())->toBe([$this->task->id])
+        ->and(app(ClaimTasks::class)->claimable($proposal->id))->toBeFalse();
+
+    Livewire::test(Inbox::class);
+    $this->task->update(['status' => TaskStatus::Done]);
+
+    expect(app(TaskDependencies::class)->unblockFinished())->toBe(1)
+        ->and(app(ClaimTasks::class)->claimable($proposal->id))->toBeTrue();
 });
 
 it('refuses a proposal from a session that does not hold the task, or for an unknown project', function () {
@@ -76,11 +98,11 @@ it('resumes the waiting task with a note once its blocker is done', function () 
     app(ClaimTasks::class)->release($this->task->id, 'beta-1', 'Waiting on Alpha.');
     app(TaskProposals::class)->accept($proposal);
 
-    expect(app(TaskProposals::class)->unblockFinished())->toBe(0);
+    expect(app(TaskDependencies::class)->unblockFinished())->toBe(0);
 
     $proposal->update(['status' => TaskStatus::Done]);
 
-    expect(app(TaskProposals::class)->unblockFinished())->toBe(1)
+    expect(app(TaskDependencies::class)->unblockFinished())->toBe(1)
         ->and($this->task->fresh())->isBlocked()->toBeFalse()->isPaused()->toBeFalse()
         ->and($this->task->fresh()->resume_note)->toContain("#{$proposal->id}")->toContain('composer update acme/alpha')
         ->and(app(ClaimTasks::class)->claimable($this->task->id))->toBeTrue();
@@ -96,9 +118,9 @@ it('resumes the waiting task once the blocker\'s GitHub PR is merged', function 
     $spec->update(['status' => 'in-review', 'pr' => ['number' => 3, 'url' => 'https://github.com/acme/alpha/pull/3']]);
     $proposal->update(['status' => TaskStatus::InReview, 'spec_id' => $spec->id]);
 
-    expect(app(TaskProposals::class)->unblockFinished())->toBe(0)
+    expect(app(TaskDependencies::class)->unblockFinished())->toBe(0)
         ->and(app(PullRequests::class)->refresh())->toBe(1)
-        ->and(app(TaskProposals::class)->unblockFinished())->toBe(1);
+        ->and(app(TaskDependencies::class)->unblockFinished())->toBe(1);
 
     Process::assertRan(fn ($process) => $process->command === ['gh', 'pr', 'view', 'https://github.com/acme/alpha/pull/3', '--json', 'state', '--jq', '.state']);
 });
@@ -144,6 +166,7 @@ it('lets you resume a blocked task yourself, dropping the wait', function () {
 });
 
 it('raises failing PR checks in the Inbox, closes them when they pass, and leaving them needs no session', function () {
+    config(['ring-master.ci.auto_fix_attempts' => 0]);
     $checks = '[{"bucket":"fail","link":"https://github.com/acme/alpha/actions/runs/1/job/2","name":"P8.5 - ubuntu","workflow":"tests"},{"bucket":"pass","link":"x","name":"Pint","workflow":"lint"}]';
     Process::fake(function ($process) use (&$checks) {
         return Process::result(str_contains((string) json_encode($process->command), 'checks') ? $checks : "OPEN\n", exitCode: 1);
@@ -173,4 +196,75 @@ it('raises failing PR checks in the Inbox, closes them when they pass, and leavi
     app(AnswerAttentionItem::class)->handle($again, AttentionKind::LEAVE);
 
     expect($again->fresh()->status)->toBe(AttentionStatus::Closed);
+});
+
+it('sends a job back on its own when its PR checks fail, at most auto_fix_attempts times, then asks you', function () {
+    config(['ring-master.ci.auto_fix_attempts' => 1]);
+    $checks = '[{"bucket":"fail","link":"https://github.com/acme/alpha/actions/runs/1/job/2","name":"P8.5 - ubuntu","workflow":"tests"}]';
+    Process::fake(function ($process) use (&$checks) {
+        return Process::result(str_contains((string) json_encode($process->command), 'checks') ? $checks : "OPEN\n", exitCode: 1);
+    });
+    $spec = Spec::query()->where('project_id', $this->alpha->id)->first();
+    $spec->update(['status' => 'in-review', 'pr' => ['url' => 'https://github.com/acme/alpha/pull/3']]);
+
+    app(PullRequests::class)->refresh();
+    app(PullRequests::class)->refresh();
+
+    $rework = $spec->attentionItems()->where('key', 'like', 'rework:%')->sole();
+    expect($rework->status)->toBe(AttentionStatus::Answered)
+        ->and($rework->note)->toContain('--log-failed')->toContain('actions/runs/1/job/2')
+        ->and($spec->fresh()->ci_fixes)->toBe(1)
+        ->and($spec->attentionItems()->where('source', 'ci')->where('status', AttentionStatus::Open)->exists())->toBeFalse();
+
+    // Back in review after the rework, failing again: the attempts are used up, so it asks.
+    $rework->update(['status' => AttentionStatus::Applied, 'applied_at' => now()]);
+    $checks = '[{"bucket":"fail","link":"https://github.com/acme/alpha/actions/runs/7/job/8","name":"P8.5 - ubuntu","workflow":"tests"}]';
+    app(PullRequests::class)->refresh();
+
+    expect($spec->attentionItems()->where('source', 'ci')->where('status', AttentionStatus::Open)->sole()->evidence)->toContain('runs/7/job/8')
+        ->and($spec->fresh()->ci_fixes)->toBe(1);
+});
+
+it('takes job suggestions only from a running planner session, refusing duplicates of open tasks', function () {
+    $root = Project::query()->where('is_workspace', true)->sole();
+    Run::query()->create(['project_id' => $root->id, 'kind' => RunKind::Plan, 'session' => 'plan-1', 'status' => RunStatus::Running, 'log_path' => '', 'started_at' => now()]);
+    $suggest = fn (string $session, string $title) => RingMasterServer::tool(SuggestTask::class, ['session' => $session, 'project' => 'Alpha', 'title' => $title, 'body' => 'Do it.', 'reason' => 'roadmap.md says next.']);
+
+    $suggest('plan-1', 'Streaming import')->assertOk()->assertSee('"status":"proposed"');
+    $suggest('plan-1', 'streaming IMPORT')->assertHasErrors();
+    $suggest('beta-1', 'Another')->assertHasErrors();
+
+    expect(Task::query()->where('status', TaskStatus::Proposed)->sole())->project_id->toBe($this->alpha->id)->proposal_reason->toBe('Planner: roadmap.md says next.')
+        ->and(Task::query()->where('status', TaskStatus::Proposed)->sole()->isBlocked())->toBeFalse();
+});
+
+it('links an open task that already covers a proposed follow-up instead of proposing it again', function () {
+    $campaign = app(CreateTask::class)->handle($this->alpha, TaskKind::Idea, 'Drop the paratest conflict pin (Alpha)');
+    $proposals = app(TaskProposals::class);
+
+    $linked = $proposals->propose($this->task->id, 'beta-1', 'Alpha', 'Drop brianium/paratest conflict so composer resolves with Pest 5.3', 'Remove it.', 'CI cannot resolve.');
+
+    expect($linked->id)->toBe($campaign->id)
+        ->and($linked->wasRecentlyCreated)->toBeFalse()
+        ->and($this->task->fresh()->dependencies->pluck('id')->all())->toBe([$campaign->id])
+        ->and(Task::query()->where('status', TaskStatus::Proposed)->count())->toBe(0);
+
+    RingMasterServer::tool(ProposeTask::class, ['task_id' => $this->task->id, 'session' => 'beta-1', 'project' => 'Alpha', 'title' => 'Drop the paratest conflict and require pest ^5.3.4', 'body' => 'x', 'reason' => 'y'])
+        ->assertSee('already_covered_by')->assertSee("#{$campaign->id}");
+
+    $other = $proposals->propose($this->task->id, 'beta-1', 'Alpha', 'Add a CSV export to the reports page', 'x', 'y');
+    $forced = $proposals->propose($this->task->id, 'beta-1', 'Alpha', 'Drop the paratest conflict pin in a second place', 'x', 'y', notDuplicate: true);
+
+    expect($other->status)->toBe(TaskStatus::Proposed)->and($forced->status)->toBe(TaskStatus::Proposed);
+});
+
+it('closes the unapplied answers of a cancelled job, so no session acts on them', function () {
+    $spec = Spec::query()->firstOrFail();
+    $this->task->update(['spec_id' => $spec->id]);
+    $item = $spec->attentionItems()->create(['key' => 'q:x', 'kind' => AttentionKind::Decision, 'question' => 'Create the ticket?', 'options' => ['Yes', 'No'], 'source' => 'ticket', 'status' => AttentionStatus::Open]);
+    app(AnswerAttentionItem::class)->handle($item, 'Yes');
+
+    app(ChangeTaskStatus::class)->cancel($this->task->fresh());
+
+    expect($item->fresh()->status)->toBe(AttentionStatus::Closed);
 });

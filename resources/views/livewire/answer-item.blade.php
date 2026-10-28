@@ -23,6 +23,18 @@
             </details>
         @endif
 
+        @if ($editing && $precedent)
+            <div class="rm-panel rm-tone-live flex flex-wrap items-center gap-3 px-4 py-3" data-precedent>
+                <flux:icon name="clock" variant="micro" class="text-cyan-300" />
+                <p class="min-w-0 flex-1 text-sm text-zinc-200">
+                    You chose <span class="text-cyan-200">{{ Str::limit($precedent['option'] ?? $precedent['decision']->answer, 80) }}</span>
+                    for “{{ Str::limit($precedent['decision']->question, 90) }}” in {{ $precedent['decision']->project->folder }} on {{ $precedent['decision']->decided_at->toFormattedDateString() }}
+                    <span class="rm-mono text-xs text-zinc-500">({{ (int) round($precedent['similarity'] * 100) }}% alike)</span>
+                </p>
+                <flux:button wire:click="usePrecedent" size="sm" icon="check" variant="primary">Answer the same</flux:button>
+            </div>
+        @endif
+
         @if ($editing)
             <form wire:submit="save" class="space-y-4">
                 <div class="grid gap-2 sm:grid-cols-2">

@@ -37,6 +37,8 @@ class Tasks extends Component
 
     public int $priority = 1;
 
+    public string $dependsOn = '';
+
     /**
      * @return array<string, list<mixed>>
      */
@@ -50,6 +52,7 @@ class Tasks extends Component
             'ticketRef' => ['nullable', 'string', 'max:100', Rule::requiredIf($this->kind === TaskKind::Ticket->value)],
             'specId' => ['nullable', Rule::requiredIf($this->kind === TaskKind::Spec->value), Rule::exists('specs', 'id')->where('project_id', (int) $this->projectId)],
             'priority' => ['required', Rule::enum(TaskPriority::class)],
+            'dependsOn' => ['nullable', Rule::exists('tasks', 'id')],
         ];
     }
 
@@ -75,9 +78,10 @@ class Tasks extends Component
             $this->ticketRef === '' ? null : $this->ticketRef,
             $kind === TaskKind::Spec ? Spec::query()->findOrFail((int) $this->specId) : null,
             TaskPriority::from($this->priority),
+            $this->dependsOn === '' ? [] : [Task::query()->with('project', 'spec')->findOrFail((int) $this->dependsOn)],
         );
 
-        $this->reset('kind', 'title', 'body', 'ticketRef', 'specId', 'priority');
+        $this->reset('kind', 'title', 'body', 'ticketRef', 'specId', 'priority', 'dependsOn');
         Flux::modal('new-task')->close();
         $this->redirectRoute('tasks.show', $task, navigate: true);
     }
@@ -93,6 +97,14 @@ class Tasks extends Component
         return view('livewire.tasks', [
             'tasks' => Task::query()->with(['project', 'spec'])->whereIn('status', $statuses)->inQueueOrder()->get(),
             'projects' => Project::query()->whereHas('workspace', fn (Builder $query) => $query->where('enabled', true))->orderByDesc('is_workspace')->orderBy('folder')->get(),
+            // Open tasks in the chosen project's workspace the new one can wait on.
+            'waitable' => $this->projectId === '' ? collect() : Task::query()
+                ->with('project')
+                ->whereIn('status', [...TaskStatus::open(), TaskStatus::Proposed])
+                ->whereHas('project', fn (Builder $query) => $query->where('workspace_id', Project::query()->whereKey((int) $this->projectId)->value('workspace_id')))
+                ->latest('id')
+                ->limit(100)
+                ->get(),
             'specs' => $this->projectId === '' ? collect() : Spec::query()->where('project_id', (int) $this->projectId)->whereDoesntHave('tasks', fn (Builder $query) => $query->whereIn('status', TaskStatus::open()))->orderByDesc('spec_updated_at')->get(),
         ]);
     }

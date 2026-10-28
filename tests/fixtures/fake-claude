@@ -20,6 +20,8 @@ if ($mode === 'spec') {
     file_put_contents(getcwd().'/docs/agent/specs/2026-10-25-0900-fake/meta.yml', "title: Fake\nstatus: building\n");
 }
 
-$emit(['type' => 'result', 'subtype' => 'success', 'is_error' => $mode === 'fail', 'result' => "Finished ({$mode})", 'total_cost_usd' => 0.0123]);
+$failed = in_array($mode, ['fail', 'limit', 'refused'], true);
+$emit(['type' => 'result', 'subtype' => 'success', 'is_error' => $failed, 'result' => $mode === 'limit' ? 'Claude usage limit reached. Your limit will reset at 5pm.' : "Finished ({$mode})", 'total_cost_usd' => 0.0123,
+    'permission_denials' => $mode === 'refused' ? [['tool_name' => 'Bash', 'tool_use_id' => 't1', 'tool_input' => ['command' => 'cd /tmp && composer test']], ['tool_name' => 'Bash', 'tool_use_id' => 't2', 'tool_input' => ['command' => 'rsync -a a b']]] : []]);
 
-exit($mode === 'fail' ? 1 : 0);
+exit($failed ? 1 : 0);

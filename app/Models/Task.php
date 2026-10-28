@@ -8,15 +8,18 @@ use App\Enums\TaskStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * A piece of work you queued: an idea, a ticket or a spec, for one project.
  * Once a spec exists for it, the scanner keeps its status in step with the
  * spec's. A paused task keeps its status but no session picks it up; one
- * blocked by another task waits until that one is done.
+ * that depends on other tasks waits until every one of them is done (or
+ * its PR is merged).
  *
  * @property int $id
  * @property int $project_id
@@ -34,16 +37,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $attempts
  * @property CarbonImmutable|null $paused_at
  * @property string|null $pause_reason
- * @property int|null $blocked_by_task_id
  * @property string|null $proposal_reason
  * @property string|null $resume_note
+ * @property int|null $campaign_id
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property-read Project $project
  * @property-read Spec|null $spec
- * @property-read Task|null $blockedBy
+ * @property-read Campaign|null $campaign
+ * @property-read Collection<int, Task> $dependencies
+ * @property-read Collection<int, Task> $dependents
  */
-#[Fillable(['project_id', 'spec_id', 'spec_key', 'kind', 'title', 'body', 'ticket_ref', 'priority', 'status', 'claimed_by', 'claimed_at', 'lease_expires_at', 'attempts', 'paused_at', 'pause_reason', 'blocked_by_task_id', 'proposal_reason', 'resume_note'])]
+#[Fillable(['project_id', 'spec_id', 'spec_key', 'kind', 'title', 'body', 'ticket_ref', 'priority', 'status', 'claimed_by', 'claimed_at', 'lease_expires_at', 'attempts', 'paused_at', 'pause_reason', 'proposal_reason', 'resume_note', 'campaign_id'])]
 class Task extends Model
 {
     public function isPaused(): bool
@@ -51,9 +56,10 @@ class Task extends Model
         return $this->paused_at !== null;
     }
 
+    /** Whether it still waits on a task that is not done. */
     public function isBlocked(): bool
     {
-        return $this->blocked_by_task_id !== null;
+        return $this->relationLoaded('dependencies') ? $this->dependencies->isNotEmpty() : $this->dependencies()->exists();
     }
 
     /** The status as shown: a paused or blocked task reads as such, whatever its spec says. */
@@ -72,23 +78,33 @@ class Task extends Model
     }
 
     /**
-     * The task this one waits on.
+     * The tasks this one waits on. A row goes once that task is done.
      *
-     * @return BelongsTo<Task, $this>
+     * @return BelongsToMany<Task, $this>
      */
-    public function blockedBy(): BelongsTo
+    public function dependencies(): BelongsToMany
     {
-        return $this->belongsTo(Task::class, 'blocked_by_task_id');
+        return $this->belongsToMany(Task::class, 'task_dependencies', 'task_id', 'depends_on_task_id')->withTimestamps();
     }
 
     /**
      * Tasks waiting on this one.
      *
-     * @return HasMany<Task, $this>
+     * @return BelongsToMany<Task, $this>
      */
-    public function blocking(): HasMany
+    public function dependents(): BelongsToMany
     {
-        return $this->hasMany(Task::class, 'blocked_by_task_id');
+        return $this->belongsToMany(Task::class, 'task_dependencies', 'depends_on_task_id', 'task_id')->withTimestamps();
+    }
+
+    /**
+     * Tasks that wait on nothing.
+     *
+     * @param  Builder<Task>  $query
+     */
+    public function scopeUnblocked(Builder $query): void
+    {
+        $query->whereDoesntHave('dependencies');
     }
 
     /**
@@ -97,6 +113,14 @@ class Task extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    /**
+     * @return BelongsTo<Campaign, $this>
+     */
+    public function campaign(): BelongsTo
+    {
+        return $this->belongsTo(Campaign::class);
     }
 
     /**

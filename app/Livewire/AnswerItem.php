@@ -6,6 +6,7 @@ use App\Actions\AnswerAttentionItem;
 use App\Enums\AttentionKind;
 use App\Enums\AttentionStatus;
 use App\Models\AttentionItem;
+use App\Support\Precedents;
 use Illuminate\Contracts\View\View;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
@@ -72,9 +73,33 @@ class AnswerItem extends Component
         $this->dispatch('answered');
     }
 
-    public function render(): View
+    /**
+     * Answers the same as the closest precedent, on your click.
+     */
+    public function usePrecedent(AnswerAttentionItem $answer, Precedents $precedents): void
     {
-        return view('livewire.answer-item', ['item' => $this->item()]);
+        $item = $this->item();
+        $suggestion = $precedents->suggestion($item);
+
+        if ($suggestion === null) {
+            return;
+        }
+
+        $decision = $suggestion['decision'];
+        $answer->handle($item, $suggestion['option'] ?? $decision->answer, "Same as #{$decision->attention_item_id} in {$decision->project->folder} ({$decision->decided_at->toDateString()})".($decision->note !== null ? ": {$decision->note}" : ''));
+
+        $this->editing = false;
+        $this->dispatch('answered');
+    }
+
+    public function render(Precedents $precedents): View
+    {
+        $item = $this->item();
+
+        return view('livewire.answer-item', [
+            'item' => $item,
+            'precedent' => $this->editing ? $precedents->suggestion($item) : null,
+        ]);
     }
 
     private function item(): AttentionItem
