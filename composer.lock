@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "bbe825ca58a0027bab401c83af147165",
+    "content-hash": "10e3b5fc9a67efb550472923b9e04178",
     "packages": [
         {
             "name": "brick/math",
@@ -3474,10 +3474,16 @@
         {
             "name": "refactor-circus/ringside",
             "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Refactor-Circus/Ringside.git",
+                "reference": "fca445d81d595c9bba0d7bcceabfb5c4970e2ff8"
+            },
             "dist": {
-                "type": "path",
-                "url": "../../Projects/packages/Ringside",
-                "reference": "f2f488daa0e1e3ead6492aaa25d939a7c0f9be03"
+                "type": "zip",
+                "url": "https://api.github.com/repos/Refactor-Circus/Ringside/zipball/fca445d81d595c9bba0d7bcceabfb5c4970e2ff8",
+                "reference": "fca445d81d595c9bba0d7bcceabfb5c4970e2ff8",
+                "shasum": ""
             },
             "require": {
                 "composer-plugin-api": "^2.0",
@@ -3491,6 +3497,7 @@
                 "pestphp/pest": "^5.3.1",
                 "phpstan/phpstan": "^2.1"
             },
+            "default-branch": true,
             "bin": [
                 "bin/ringside"
             ],
@@ -3550,10 +3557,11 @@
                 "ringside",
                 "standards"
             ],
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "support": {
+                "source": "https://github.com/Refactor-Circus/Ringside/tree/main",
+                "issues": "https://github.com/Refactor-Circus/Ringside/issues"
+            },
+            "time": "2026-10-28T02:50:41+00:00"
         },
         {
             "name": "symfony/clock",

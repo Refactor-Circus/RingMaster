@@ -45,6 +45,10 @@ Adding a plain nullable column is safe on SQLite (`ALTER TABLE ADD COLUMN`); add
 
 SQLite cannot drop a column in place: Laravel rebuilds the table, and inside a transaction `PRAGMA foreign_keys=off` is ignored, so the rebuild would cascade-delete child rows. A migration that drops or changes a column on a table others reference must set `public $withinTransaction = false;` (see `2026_10_27_000008_create_task_dependencies_table.php`). Try it on a copy of `database/database.sqlite` first.
 
+## Ringside
+
+CI installs Ringside `dev-main` from GitHub (`composer.json`). Locally, `composer local:install` symlinks your checkout through the gitignored `composer.local.json` and `composer.local.lock` (`bin/composer-local.php`). A RingMaster change that needs an unmerged Ringside change passes locally but not in CI until that Ringside PR is merged and `composer update refactor-circus/ringside` moves the lock.
+
 ## Tests
 
 - `tests/fixtures/fake-claude` stands in for `claude` in runner tests. `FAKE_CLAUDE_MODE` (`ok`, `fail`, `limit`, `refused`, `sleep`, `spec`) decides the stream-json it writes.

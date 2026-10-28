@@ -14,6 +14,8 @@
 composer setup        # composer install, .env, app key, migrations (SQLite), npm install, npm run build
 ```
 
+`composer.json` installs Ringside from GitHub, as CI does. To work against your own Ringside checkout instead (changes there apply here at once), run `composer local:install` (or `local:update`): it writes a gitignored `composer.local.json` that symlinks the checkout, found beside this app, in `$RING_MASTER_PACKAGES`, or in `~/Projects/packages`.
+
 ## Serve it
 
 Any of:
