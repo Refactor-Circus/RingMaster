@@ -79,7 +79,7 @@ final class Chores
 
         $task = $this->tasks->handle($chore->project, TaskKind::Idea, 'Fix Dependabot PR: '.(string) ($chore->payload['title'] ?? $url),
             "Dependabot's PR {$url} (branch {$branch}) has failing checks:\n".implode("\n", $failing)
-            ."\n\nRead the failing job logs (gh run view <run> --log-failed), fix what the update broke on that branch, and push to it so the PR goes green. Do not merge it.");
+            ."\n\nWork in a worktree of your own, never the main checkout: `git worktree add ../{$chore->project->folder}--dependabot {$branch}` (after `git fetch origin {$branch}`), and remove it when you are done. Read the failing job logs (gh run view <run> --log-failed), fix what the update broke on that branch, and push to it so the PR goes green. Do not merge it.");
 
         return "Queued task #{$task->id}.";
     }

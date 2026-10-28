@@ -34,6 +34,7 @@ After changing `.env`, restart the runner (`.env` is not watched). A change to `
 | Key | `.env` | Default | |
 | --- | --- | --- | --- |
 | `janitor.enabled` | `RING_MASTER_JANITOR` | `true` | run the janitor from the runner |
+| `janitor.pull` | `RING_MASTER_JANITOR_PULL` | `true` | bring each checkout up to its base branch, and a package's as soon as its PR merges; never with uncommitted changes, local commits or a session in it |
 | `janitor.every_minutes` | `RING_MASTER_JANITOR_EVERY` | `60` | minutes between passes |
 | `janitor.dependabot` | `RING_MASTER_DEPENDABOT` | `true` | triage Dependabot PRs on each pass |
 | `janitor.skip` | `RING_MASTER_JANITOR_SKIP` | none | comma-separated project folders to leave alone |

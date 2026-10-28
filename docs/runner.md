@@ -60,6 +60,7 @@ claude "<prompt>" -p --output-format stream-json --verbose
 - It runs in the project's folder, with the workspace root added so it can reach job worktrees beside the package (`../Package--spec`).
 - RingMaster's own MCP server is passed in, so sessions need no global setup to reach the queue.
 - The environment is the runner's, minus every variable RingMaster's own `.env` sets: a package's tests would otherwise read RingMaster's `DB_CONNECTION`, `APP_ENV` or `SESSION_DRIVER` as their own. `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` is added so `claude -p` does not stop background work (a factory build) ten minutes after its last turn.
+- Every session's system prompt (`--append-system-prompt`) states the house rules: one command per Bash call, relative paths, scratch files inside the project, retry a refused call another allowed way, and never switch branches, commit or stash in a package's main checkout (other jobs build against it): work that is not a factory job goes in a worktree of its own.
 - Sessions run in a process session of their own (`resources/runner/detach.php`), so Ctrl+C in the runner's terminal does not reach them.
 
 ## The tool allowlist

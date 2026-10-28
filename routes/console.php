@@ -96,6 +96,10 @@ Artisan::command('ring-master:work {--once : Start what can start, wait for it t
 
 Artisan::command('ring-master:clean {--dry-run : Only list what would go} {--dependabot : Triage Dependabot PRs too}', function (Janitor $janitor, Dependabot $prs) {
     foreach ($janitor->run((bool) $this->option('dry-run')) as $folder => $report) {
+        foreach ($report['updated'] as $change) {
+            $this->line(($this->option('dry-run') ? 'would update' : 'updated')." {$folder}: {$change}");
+        }
+
         foreach (['worktrees' => 'worktree', 'branches' => 'local branch'] as $part => $label) {
             foreach ($report[$part] as $item) {
                 $this->line(($this->option('dry-run') ? 'would remove' : 'removed')." {$label} {$folder}: {$item}");

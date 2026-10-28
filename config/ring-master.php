@@ -78,8 +78,12 @@ return [
     | Janitor
     |--------------------------------------------------------------------------
     |
-    | Every every_minutes the runner tidies each project's checkout: it
-    | removes clean worktrees and deletes local branches whose work is on the
+    | Every every_minutes the runner tidies each project's checkout: with
+    | pull (default on) it brings the checkout up to the base branch (jobs
+    | build against their siblings' local checkouts), fast-forwarding it or
+    | leaving a fully merged branch for it, never with uncommitted changes,
+    | local commits or a session working there; it also does this for a
+    | package as soon as one of its PRs is merged. It removes clean worktrees and deletes local branches whose work is on the
     | base branch, and raises a chore in the Inbox for merged branches left
     | on GitHub, deleted only once you approve. It also triages open
     | Dependabot PRs: green ones become a chore to merge, failing ones a
@@ -91,6 +95,7 @@ return [
 
     'janitor' => [
         'enabled' => (bool) env('RING_MASTER_JANITOR', true),
+        'pull' => (bool) env('RING_MASTER_JANITOR_PULL', true),
         'every_minutes' => (int) env('RING_MASTER_JANITOR_EVERY', 60),
         'dependabot' => (bool) env('RING_MASTER_DEPENDABOT', true),
         'skip' => array_values(array_filter(array_map(trim(...), explode(',', (string) env('RING_MASTER_JANITOR_SKIP', ''))))),

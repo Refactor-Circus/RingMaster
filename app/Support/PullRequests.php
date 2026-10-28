@@ -22,7 +22,7 @@ final class PullRequests
     /** Key prefix of the Inbox items for failing checks. */
     public const string CHECKS = 'checks:';
 
-    public function __construct(private readonly Notifier $notifier, private readonly SendBackSpec $sendBack) {}
+    public function __construct(private readonly Notifier $notifier, private readonly SendBackSpec $sendBack, private readonly Janitor $janitor) {}
 
     /**
      * @return int specs found merged
@@ -35,6 +35,8 @@ final class PullRequests
             if ($this->merged($spec)) {
                 $spec->update(['pr_merged_at' => now()]);
                 Activity::record('spec.merged', 'PR merged: a session records it and runs the post-mortem', spec: $spec);
+                // Packages that use this one build against its local checkout: bring it up to the merge now.
+                $this->janitor->update($spec->project);
                 $merged++;
 
                 continue;
