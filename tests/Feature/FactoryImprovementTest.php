@@ -115,6 +115,7 @@ it('asks for an analyst run from the Factory page', function () {
 });
 
 it('says why a requested analyst run has not started', function () {
+    config(['ring-master.runner.concurrency' => 3]);
     $this->analyst->update(['status' => RunStatus::Succeeded, 'started_at' => now()->subDay()]);
     Livewire::test(Factory::class)->call('analyse')
         ->assertSee('Analysis requested')

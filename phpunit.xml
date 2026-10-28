@@ -36,5 +36,6 @@
         <env name="RING_MASTER_NIGHT_SHIFT" value="false"/>
         <env name="RING_MASTER_BRIEFING_AT" value="(empty)"/>
         <env name="RING_MASTER_SIGNALS" value="false"/>
+        <env name="RING_MASTER_RUNNER_MAX_LOAD" value="0"/>
     </php>
 </phpunit>

@@ -3477,12 +3477,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/Refactor-Circus/Ringside.git",
-                "reference": "fca445d81d595c9bba0d7bcceabfb5c4970e2ff8"
+                "reference": "82f20941e795d7877d9d4c5734645a8966e5072f"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Refactor-Circus/Ringside/zipball/fca445d81d595c9bba0d7bcceabfb5c4970e2ff8",
-                "reference": "fca445d81d595c9bba0d7bcceabfb5c4970e2ff8",
+                "url": "https://api.github.com/repos/Refactor-Circus/Ringside/zipball/82f20941e795d7877d9d4c5734645a8966e5072f",
+                "reference": "82f20941e795d7877d9d4c5734645a8966e5072f",
                 "shasum": ""
             },
             "require": {
@@ -3561,7 +3561,7 @@
                 "source": "https://github.com/Refactor-Circus/Ringside/tree/main",
                 "issues": "https://github.com/Refactor-Circus/Ringside/issues"
             },
-            "time": "2026-10-28T02:50:41+00:00"
+            "time": "2026-10-28T04:24:56+00:00"
         },
         {
             "name": "symfony/clock",
