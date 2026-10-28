@@ -168,7 +168,7 @@ final class Replays
      */
     private function copySpec(Project $package, Spec $spec, string $checkout): void
     {
-        $from = $package->path.'/'.$spec->dir;
+        $from = $spec->folder();
         $to = $checkout.'/'.$spec->dir;
         File::ensureDirectoryExists($to);
 

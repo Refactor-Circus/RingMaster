@@ -88,7 +88,7 @@ final class Risk
             return null;
         }
 
-        $brief = $spec->project->ringside()->read($spec->dir.'/brief.md');
+        $brief = $spec->read('brief.md');
 
         return is_string($brief) && trim($brief) !== '' ? trim($brief) : null;
     }
@@ -123,9 +123,19 @@ final class Risk
             $deletions += (int) ($view['deletions'] ?? 0);
 
             foreach (is_array($view['files'] ?? null) ? $view['files'] : [] as $file) {
-                if (is_array($file) && is_string($file['path'] ?? null)) {
-                    $paths[] = $file['path'];
+                // The PR carries the job's spec record; only the code it changes counts toward its risk.
+                if (! is_array($file) || ! is_string($file['path'] ?? null)) {
+                    continue;
                 }
+
+                if (str_starts_with($file['path'], dirname($spec->dir).'/')) {
+                    $additions -= (int) ($file['additions'] ?? 0);
+                    $deletions -= (int) ($file['deletions'] ?? 0);
+
+                    continue;
+                }
+
+                $paths[] = $file['path'];
             }
         }
 

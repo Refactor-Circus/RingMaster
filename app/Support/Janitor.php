@@ -12,6 +12,7 @@ use App\Models\Run;
 use App\Models\Workspace;
 use App\Runner\Runner;
 use Illuminate\Support\Facades\Process;
+use RefactorCircus\Ringside\Specs\Locator;
 
 /**
  * Tidies each project's git checkout once its work is merged. On its own it
@@ -21,7 +22,8 @@ use Illuminate\Support\Facades\Process;
  * (merged, or the same changes squashed in). Branches on
  * GitHub are another matter: deleting them is raised as a chore and runs
  * only once you approve it. A dirty worktree, an unmerged branch and the
- * branch a checkout is on are never touched.
+ * branch a checkout is on are never touched, and neither is a job worktree
+ * whose spec has yet to reach the checkout: it would vanish from the board.
  */
 final class Janitor
 {
@@ -65,8 +67,16 @@ final class Janitor
             array_push($report['skipped'], ...$skipped);
         }
 
+        $specs = array_flip(Locator::worktrees($project->ringside()));
+
         foreach ($this->worktrees($project) as $path => $branch) {
             if ($branch === null || ! $this->merged($project, $branch, $base)) {
+                continue;
+            }
+
+            if (isset($specs[$path]) && $this->git($project, 'ls-files', '--error-unmatch', '--', Locator::relative($project->ringside()).'/'.$specs[$path].'/meta.yml') === null) {
+                $report['skipped'][] = "worktree {$path}: its spec is not on the checkout yet";
+
                 continue;
             }
 
@@ -160,6 +170,12 @@ final class Janitor
         $behind = (int) trim((string) $this->git($project, 'rev-list', '--count', "{$baseName}..{$base}"));
 
         if ($behind > 0) {
+            $cleared = $dryRun ? 0 : $this->clearMerged($project, $baseName, $base);
+
+            if ($cleared > 0) {
+                $updated[] = "dropped {$cleared} untracked file(s) the merge brings unchanged";
+            }
+
             if (! $dryRun && $this->git($project, 'merge', '--ff-only', '--quiet', $base) === null) {
                 return [$updated, ["checkout not updated: {$baseName} could not fast-forward to {$base}"]];
             }
@@ -168,6 +184,31 @@ final class Janitor
         }
 
         return [$updated, []];
+    }
+
+    /**
+     * Deletes untracked files that the commits from $baseName to $base add
+     * with the very same content, which git would refuse to overwrite: a
+     * spec folder left on the checkout from before its job committed it.
+     * A file that differs is kept, and the fast-forward reports it.
+     */
+    private function clearMerged(Project $project, string $baseName, string $base): int
+    {
+        $cleared = 0;
+
+        foreach (array_filter(explode("\n", (string) $this->git($project, 'diff', '--name-only', '--diff-filter=A', $baseName, $base))) as $file) {
+            $path = $project->path.'/'.$file;
+
+            if (! is_file($path) || $this->git($project, 'ls-files', '--error-unmatch', '--', $file) !== null) {
+                continue;
+            }
+
+            if (trim((string) $this->git($project, 'hash-object', '--', $file)) === trim((string) $this->git($project, 'rev-parse', "{$base}:{$file}")) && @unlink($path)) {
+                $cleared++;
+            }
+        }
+
+        return $cleared;
     }
 
     /**

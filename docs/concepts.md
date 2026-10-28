@@ -22,7 +22,7 @@ A **workspace root** is a project too (`is_workspace`). Some things work per wor
 
 ## Specs and stages
 
-A **spec** is one Ring Master job: a folder `docs/agent/specs/<id>/` with `meta.yml`, `shape.md`, `spec.md`, `tasks.md`, review rounds and so on. Its `status` decides its column on the Board:
+A **spec** is one Ring Master job: a folder `docs/agent/specs/<id>/` with `meta.yml`, `shape.md`, `spec.md`, `tasks.md`, review rounds and so on. It lives in the job's worktree beside the package (`../<Package>--<id>`, on `ring-master/<id>`) from the moment it is created, and every stage commits it there, so the PR carries the spec and its decisions; once the PR merges it is on the package's main checkout, and a post-mortem reopens it on `ring-master/<id>-record`. RingMaster reads each spec wherever it is. A spec changes one package: work across packages is one spec per package, linked as task dependencies. Its `status` decides its column on the Board:
 
 | Column | Spec statuses |
 | --- | --- |

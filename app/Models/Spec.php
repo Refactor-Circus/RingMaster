@@ -14,7 +14,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $id
  * @property int $project_id
  * @property string $key
- * @property string $dir
+ * @property string $dir relative to any checkout of the package
+ * @property string|null $path the spec folder, absolute: in its job worktree, or on main once merged
+ * @property string|null $worktree the job worktree that holds the spec, or null once it is only on main
  * @property string $title
  * @property string $status
  * @property string $column
@@ -37,7 +39,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable|null $updated_at
  * @property-read Project $project
  */
-#[Fillable(['project_id', 'key', 'dir', 'title', 'status', 'column', 'ticket', 'pr', 'branch', 'tasks_done', 'tasks_total', 'packages', 'rounds', 'decisions', 'decision', 'questions', 'files', 'spec_updated_at', 'activity_at', 'pr_merged_at', 'ci_fixes'])]
+#[Fillable(['project_id', 'key', 'dir', 'path', 'worktree', 'title', 'status', 'column', 'ticket', 'pr', 'branch', 'tasks_done', 'tasks_total', 'packages', 'rounds', 'decisions', 'decision', 'questions', 'files', 'spec_updated_at', 'activity_at', 'pr_merged_at', 'ci_fixes'])]
 class Spec extends Model
 {
     /**
@@ -62,6 +64,25 @@ class Spec extends Model
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class);
+    }
+
+    /**
+     * The spec folder, absolute, wherever it lives; a row scanned before
+     * specs moved into worktrees knows only its place on main.
+     */
+    public function folder(): string
+    {
+        return $this->path ?? $this->project->path.'/'.$this->dir;
+    }
+
+    /**
+     * A file in the spec folder, or null when it is missing.
+     */
+    public function read(string $name): ?string
+    {
+        $file = $this->folder().'/'.$name;
+
+        return is_file($file) ? (string) file_get_contents($file) : null;
     }
 
     /**

@@ -104,6 +104,8 @@ final class ScanWorkspaces
 
             $model->fill([
                 'dir' => $spec['dir'],
+                'path' => $spec['path'] ?? null,
+                'worktree' => $spec['worktree'] ?? null,
                 'title' => $spec['title'],
                 'status' => $spec['status'],
                 'column' => $spec['column'],
@@ -171,7 +173,7 @@ final class ScanWorkspaces
         }
 
         if ($spec->status === 'escalated') {
-            $reasons = trim((string) $spec->project->ringside()->read($spec->dir.'/decision.md'));
+            $reasons = trim((string) $spec->read('decision.md'));
 
             // Keyed by the reasons: a build escalates again without a new review round.
             $present[] = $this->upsertItem($spec, 'escalation:'.substr(sha1($reasons), 0, 16), [

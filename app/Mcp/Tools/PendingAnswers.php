@@ -33,6 +33,8 @@ class PendingAnswers extends Tool
             'project_path' => $answers->first()->spec->project->path,
             'spec' => $answers->first()->spec->key,
             'spec_dir' => $answers->first()->spec->dir,
+            // Absolute, in the job worktree while the job is open: write the answers there.
+            'spec_path' => $answers->first()->spec->folder(),
             'spec_status' => $answers->first()->spec->status,
             'task_ids' => $answers->first()->spec->tasks()->whereIn('status', TaskStatus::open())->pluck('id')->all(),
             'answers' => $answers->map(fn (AttentionItem $item) => [
