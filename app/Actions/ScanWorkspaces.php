@@ -209,11 +209,13 @@ final class ScanWorkspaces
     private function upsertItem(Spec $spec, string $key, array $attributes): int
     {
         $item = AttentionItem::query()->firstOrNew(['spec_id' => $spec->id, 'key' => $key]);
-        $new = ! $item->exists;
+        // Dealt with before and back in the folder: the job asks again (the same preflight question on a later run), so it needs a new answer.
+        $asked = $item->exists && in_array($item->status, [AttentionStatus::Applied, AttentionStatus::Closed], true);
+        $new = ! $item->exists || $asked;
         $item->fill($attributes);
 
         if ($new) {
-            $item->status = AttentionStatus::Open;
+            $item->fill(['status' => AttentionStatus::Open, 'answer' => null, 'note' => null, 'answered_at' => null, 'applied_at' => null, 'closed_at' => null]);
         }
 
         $item->save();

@@ -230,3 +230,23 @@ it('raises a spec whose meta.yml is not valid YAML in the Inbox, and scans every
     app(AnswerAttentionItem::class)->handle($item, 'I fixed the file');
     expect($item->fresh()->status)->toBe(AttentionStatus::Closed);
 });
+
+it('reopens a question that comes back after it was applied, so a job never waits on one you cannot see', function () {
+    $dir = 'Beta/docs/agent/specs/2026-10-24-0900-exports';
+    $question = "- id: Q-001\n  question: Commit or stash these main changes before the build?\n  options: [Commit them on main first, Stash them]\n  source: build\n";
+    rewriteFixture($this->root, "{$dir}/meta.yml", "title: Exports\nstatus: needs-decision\n");
+    rewriteFixture($this->root, "{$dir}/questions.yml", $question);
+    app(ScanWorkspaces::class)->handle();
+    $item = AttentionItem::query()->where('question', 'Commit or stash these main changes before the build?')->sole();
+    app(AnswerAttentionItem::class)->handle($item, 'Commit them on main first');
+
+    rewriteFixture($this->root, "{$dir}/questions.yml", "[]\n");
+    app(ScanWorkspaces::class)->handle();
+    expect($item->fresh()->status)->toBe(AttentionStatus::Applied);
+
+    // A later run stops on the same question again.
+    rewriteFixture($this->root, "{$dir}/questions.yml", $question);
+    app(ScanWorkspaces::class)->handle();
+
+    expect($item->fresh())->status->toBe(AttentionStatus::Open)->answer->toBeNull();
+});
