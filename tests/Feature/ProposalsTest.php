@@ -125,6 +125,17 @@ it('resumes the waiting task once the blocker\'s GitHub PR is merged', function 
     Process::assertRan(fn ($process) => $process->command === ['gh', 'pr', 'view', 'https://github.com/acme/alpha/pull/3', '--json', 'state', '--jq', '.state']);
 });
 
+it('brings the package\'s checkout up to date as soon as its PR is merged', function () {
+    Process::fake(['*' => Process::result("MERGED\n")]);
+    $spec = Spec::query()->where('project_id', $this->alpha->id)->first();
+    $spec->update(['status' => 'in-review', 'pr' => ['number' => 3, 'url' => 'https://github.com/acme/alpha/pull/3']]);
+    mkdir($this->alpha->path.'/.git');
+
+    expect(app(PullRequests::class)->refresh())->toBe(1);
+
+    Process::assertRan(fn ($process) => $process->command === ['git', 'fetch', '--prune', '--quiet', 'origin'] && $process->path === $this->alpha->path);
+});
+
 it('hands a task in review back to a session once its PR is merged', function () {
     $state = 'OPEN';
     Process::fake(function ($process) use (&$state) {

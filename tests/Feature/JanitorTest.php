@@ -4,9 +4,12 @@ use App\Actions\Chores;
 use App\Actions\ScanWorkspaces;
 use App\Enums\ChoreKind;
 use App\Enums\ChoreStatus;
+use App\Enums\RunKind;
+use App\Enums\RunStatus;
 use App\Livewire\Inbox;
 use App\Models\Chore;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\Task;
 use App\Providers\AppServiceProvider;
 use App\Support\Dependabot;
@@ -139,7 +142,7 @@ it('raises a merge chore for a green Dependabot PR and a fix chore for a failing
 
     Process::assertRan(fn ($process) => $process->command === ['gh', 'pr', 'merge', $green, '--merge', '--delete-branch']);
     expect($merge->fresh()->status)->toBe(ChoreStatus::Done)
-        ->and(Task::query()->where('title', 'Fix Dependabot PR: Bump guzzle to 8')->sole()->body)->toContain('actions/runs/3')->toContain('Do not merge it');
+        ->and(Task::query()->where('title', 'Fix Dependabot PR: Bump guzzle to 8')->sole()->body)->toContain('actions/runs/3')->toContain('Do not merge it')->toContain('git worktree add ../Alpha--dependabot dependabot/guzzle');
 });
 
 it('puts a failed chore back in the Inbox on retry', function () {
@@ -196,4 +199,83 @@ it('raises no second fix chore, and queues no second task, for a Dependabot PR a
     $again = Chore::query()->create(['project_id' => $this->alpha->id, 'kind' => ChoreKind::DependabotFix, 'key' => 'dependabot-fix:x', 'title' => 'Failing checks: Bump guzzle to 8', 'payload' => ['url' => $red, 'title' => 'Bump guzzle to 8', 'branch' => 'b', 'failing' => []], 'status' => ChoreStatus::Open]);
     expect(app(Chores::class)->approve($again)->result)->toBe("Task #{$task->id} already fixes this PR; nothing new queued.")
         ->and(Task::query()->count())->toBe(1);
+});
+
+/**
+ * Alpha as a clone of a bare origin that has moved on by one commit (pushed
+ * from another clone), so Alpha is behind once it fetches.
+ */
+function behindRepo(string $root, string $alpha): void
+{
+    git($root, 'init', '--bare', '-q', 'origin.git');
+    git($alpha, 'init', '-q');
+    git($alpha, 'add', '-A');
+    git($alpha, 'commit', '-qm', 'first');
+    git($alpha, 'remote', 'add', 'origin', $root.'/origin.git');
+    git($alpha, 'push', '-q', '-u', 'origin', 'main');
+    git($alpha, 'remote', 'set-head', 'origin', 'main');
+    git($root, 'clone', '-q', $root.'/origin.git', 'other');
+    file_put_contents("{$root}/other/merged-on-github.txt", 'merged');
+    git("{$root}/other", 'add', '-A');
+    git("{$root}/other", 'commit', '-qm', 'merged on GitHub');
+    git("{$root}/other", 'push', '-q', 'origin', 'main');
+}
+
+it('fast-forwards a checkout that is behind its base branch, so jobs build against current siblings', function () {
+    behindRepo($this->root, $this->alpha->path);
+
+    $report = app(Janitor::class)->project($this->alpha);
+
+    expect($report['updated'])->toBe(['fast-forwarded main 1 commit(s)'])
+        ->and(is_file($this->alpha->path.'/merged-on-github.txt'))->toBeTrue();
+});
+
+it('leaves a fully merged branch for the base branch, then deletes it', function () {
+    behindRepo($this->root, $this->alpha->path);
+    git($this->alpha->path, 'switch', '-qc', 'drop-pin');
+
+    $report = app(Janitor::class)->project($this->alpha);
+
+    expect($report['updated'])->toBe(['left drop-pin (merged) for main', 'fast-forwarded main 1 commit(s)'])
+        ->and($report['branches'])->toBe(['drop-pin'])
+        ->and(git($this->alpha->path, 'branch', '--show-current'))->toBe('main');
+});
+
+it('never updates a checkout with uncommitted changes, commits of its own, unmerged work or a session in it', function (string $setup, string $why) {
+    behindRepo($this->root, $this->alpha->path);
+    $alpha = $this->alpha->path;
+
+    match ($setup) {
+        'dirty' => file_put_contents("{$alpha}/composer.json", "{}\n"),
+        'ahead' => (function () use ($alpha) {
+            file_put_contents("{$alpha}/local.txt", 'local');
+            git($alpha, 'add', '-A');
+            git($alpha, 'commit', '-qm', 'local');
+        })(),
+        'unmerged' => (function () use ($alpha) {
+            git($alpha, 'switch', '-qc', 'wip');
+            file_put_contents("{$alpha}/wip.txt", 'wip');
+            git($alpha, 'add', '-A');
+            git($alpha, 'commit', '-qm', 'wip');
+        })(),
+        'busy' => Run::query()->create(['project_id' => $this->alpha->id, 'kind' => RunKind::Task, 'session' => 's', 'status' => RunStatus::Running, 'log_path' => '', 'started_at' => now()]),
+    };
+
+    $report = app(Janitor::class)->project($this->alpha);
+
+    expect($report['updated'])->toBe([])
+        ->and($report['skipped'])->toContain("checkout not updated: {$why}")
+        ->and(is_file("{$alpha}/merged-on-github.txt"))->toBeFalse();
+})->with([
+    'uncommitted changes' => ['dirty', 'uncommitted changes'],
+    'commits of its own' => ['ahead', 'main has commits of its own'],
+    'unmerged work' => ['unmerged', 'on wip, which has unmerged work'],
+    'a session in it' => ['busy', 'a session is working in it'],
+]);
+
+it('can be turned off', function () {
+    config(['ring-master.janitor.pull' => false]);
+    behindRepo($this->root, $this->alpha->path);
+
+    expect(app(Janitor::class)->project($this->alpha)['updated'])->toBe([]);
 });

@@ -4,16 +4,21 @@ namespace App\Support;
 
 use App\Enums\ChoreKind;
 use App\Enums\ChoreStatus;
+use App\Enums\RunStatus;
 use App\Models\Activity;
 use App\Models\Chore;
 use App\Models\Project;
+use App\Models\Run;
 use App\Models\Workspace;
+use App\Runner\Runner;
 use Illuminate\Support\Facades\Process;
 
 /**
  * Tidies each project's git checkout once its work is merged. On its own it
- * removes clean worktrees and deletes local branches whose commits are on
- * the base branch (merged, or the same changes squashed in). Branches on
+ * brings the checkout up to the base branch (jobs build against their
+ * siblings' local checkouts, so a stale one breaks them), removes clean
+ * worktrees and deletes local branches whose commits are on the base branch
+ * (merged, or the same changes squashed in). Branches on
  * GitHub are another matter: deleting them is raised as a chore and runs
  * only once you approve it. A dirty worktree, an unmerged branch and the
  * branch a checkout is on are never touched.
@@ -23,7 +28,7 @@ final class Janitor
     public function __construct(private readonly Notifier $notifier) {}
 
     /**
-     * @return array<string, array{worktrees: list<string>, branches: list<string>, remote: list<string>, skipped: list<string>}> per project folder
+     * @return array<string, array{updated: list<string>, worktrees: list<string>, branches: list<string>, remote: list<string>, skipped: list<string>}> per project folder
      */
     public function run(bool $dryRun = false): array
     {
@@ -37,11 +42,11 @@ final class Janitor
     }
 
     /**
-     * @return array{worktrees: list<string>, branches: list<string>, remote: list<string>, skipped: list<string>}
+     * @return array{updated: list<string>, worktrees: list<string>, branches: list<string>, remote: list<string>, skipped: list<string>}
      */
     public function project(Project $project, bool $dryRun = false): array
     {
-        $report = ['worktrees' => [], 'branches' => [], 'remote' => [], 'skipped' => []];
+        $report = ['updated' => [], 'worktrees' => [], 'branches' => [], 'remote' => [], 'skipped' => []];
         $origin = $this->git($project, 'config', '--get', 'remote.origin.url');
 
         if ($origin !== null) {
@@ -52,6 +57,12 @@ final class Janitor
 
         if ($base === null) {
             return $report;
+        }
+
+        if ((bool) config('ring-master.janitor.pull', true)) {
+            [$updated, $skipped] = $this->sync($project, $base, $dryRun);
+            array_push($report['updated'], ...$updated);
+            array_push($report['skipped'], ...$skipped);
         }
 
         foreach ($this->worktrees($project) as $path => $branch) {
@@ -99,11 +110,92 @@ final class Janitor
             }
         }
 
-        if (! $dryRun && ($report['worktrees'] !== [] || $report['branches'] !== [])) {
-            Activity::record('janitor.cleaned', "{$project->folder}: removed ".count($report['worktrees']).' worktree(s) and '.count($report['branches']).' merged branch(es)');
+        if (! $dryRun && ($report['updated'] !== [] || $report['worktrees'] !== [] || $report['branches'] !== [])) {
+            Activity::record('janitor.cleaned', "{$project->folder}: ".implode('; ', [...$report['updated'], 'removed '.count($report['worktrees']).' worktree(s) and '.count($report['branches']).' merged branch(es)']));
         }
 
         return $report;
+    }
+
+    /**
+     * Brings the checkout up to $base: fast-forwards the base branch when it
+     * is behind, and leaves a branch whose work is all merged for the base
+     * branch (its own cleanup then deletes it). A checkout with uncommitted
+     * tracked changes, commits of its own, a detached HEAD, or a session
+     * working in it is left as it is. Call it after a fetch.
+     *
+     * @return array{0: list<string>, 1: list<string>} what changed, what was left and why
+     */
+    public function sync(Project $project, string $base, bool $dryRun = false): array
+    {
+        $busy = Run::query()->with('project')->whereIn('status', [RunStatus::Running, RunStatus::Stopping])->get()
+            ->contains(fn (Run $run): bool => Runner::overlaps($project->path, [$run->project->path]));
+        $current = trim((string) $this->git($project, 'branch', '--show-current'));
+        $baseName = str_contains($base, '/') ? substr($base, strpos($base, '/') + 1) : $base;
+
+        $why = match (true) {
+            $busy => 'a session is working in it',
+            $current === '' => 'detached HEAD',
+            trim((string) $this->git($project, 'status', '--porcelain', '--untracked-files=no')) !== '' => 'uncommitted changes',
+            $current !== $baseName && ! $this->merged($project, $current, $base) => "on {$current}, which has unmerged work",
+            $current === $baseName && trim((string) $this->git($project, 'rev-list', '--count', "{$base}..HEAD")) !== '0' => "{$baseName} has commits of its own",
+            default => null,
+        };
+
+        // Only a checkout that is actually behind is worth a word.
+        if ($why !== null) {
+            return [[], trim((string) $this->git($project, 'rev-list', '--count', "HEAD..{$base}")) !== '0' ? ["checkout not updated: {$why}"] : []];
+        }
+
+        $updated = [];
+
+        if ($current !== $baseName) {
+            if (! $dryRun && $this->git($project, 'switch', $baseName) === null) {
+                return [[], ["checkout not updated: could not switch from {$current} to {$baseName}"]];
+            }
+
+            $updated[] = "left {$current} (merged) for {$baseName}";
+        }
+
+        $behind = (int) trim((string) $this->git($project, 'rev-list', '--count', "{$baseName}..{$base}"));
+
+        if ($behind > 0) {
+            if (! $dryRun && $this->git($project, 'merge', '--ff-only', '--quiet', $base) === null) {
+                return [$updated, ["checkout not updated: {$baseName} could not fast-forward to {$base}"]];
+            }
+
+            $updated[] = "fast-forwarded {$baseName} {$behind} commit(s)";
+        }
+
+        return [$updated, []];
+    }
+
+    /**
+     * Fetches the project and brings its checkout up to the base branch, as
+     * right after one of its PRs is merged.
+     *
+     * @return list<string> what changed
+     */
+    public function update(Project $project): array
+    {
+        if (! is_dir($project->path.'/.git') || ! (bool) config('ring-master.janitor.pull', true)) {
+            return [];
+        }
+
+        $origin = $this->git($project, 'config', '--get', 'remote.origin.url');
+
+        if ($origin !== null) {
+            $this->git($project, 'fetch', '--prune', '--quiet', 'origin');
+        }
+
+        $base = $this->base($project, $origin !== null);
+        [$updated] = $base === null ? [[]] : $this->sync($project, $base);
+
+        if ($updated !== []) {
+            Activity::record('janitor.cleaned', "{$project->folder}: ".implode('; ', $updated));
+        }
+
+        return $updated;
     }
 
     /**
