@@ -43,7 +43,7 @@ Answers you gave in RingMaster that are not in the spec folders yet.
 | --- | --- |
 | `project_path` | required |
 
-Returns `specs`: for each, `project_path`, `spec`, `spec_dir`, `spec_status`, `task_ids` (the spec's open tasks), and `answers` (`kind`, `question`, `answer`, `note`, `source`, `answered_at`). RingMaster marks each applied once it leaves the folder.
+Returns `specs`: for each, `project_path`, `spec`, `spec_dir`, `spec_path` (the folder, absolute: in the job worktree while the job is open), `spec_status`, `task_ids` (the spec's open tasks), and `answers` (`kind`, `question`, `answer`, `note`, `source`, `answered_at`). RingMaster marks each applied once it leaves the folder.
 
 ### `next-task` (read-only)
 
@@ -159,7 +159,7 @@ Every tool that returns a task returns:
   "claimed_by": "runner-ab12cd",
   "lease_expires_at": "2026-10-27T10:15:00+00:00",
   "project": { "folder": "Keystone", "path": "/…/Keystone", "is_workspace": false },
-  "spec": { "key": "2026-10-27-0900-exports", "dir": "docs/agent/specs/2026-10-27-0900-exports", "status": "building" },
+  "spec": { "key": "2026-10-27-0900-exports", "dir": "docs/agent/specs/2026-10-27-0900-exports", "path": "/Users/you/Projects/packages/Atrium--2026-10-27-0900-exports/docs/agent/specs/2026-10-27-0900-exports", "status": "building" },
   "ship_input": "2026-10-27-0900-exports",
   "resume_note": null,
   "depends_on": [9]

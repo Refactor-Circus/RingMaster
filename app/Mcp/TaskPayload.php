@@ -28,7 +28,7 @@ final class TaskPayload
             'claimed_by' => $task->claimed_by,
             'lease_expires_at' => $task->lease_expires_at?->toIso8601String(),
             'project' => ['folder' => $task->project->folder, 'path' => $task->project->path, 'is_workspace' => $task->project->is_workspace],
-            'spec' => $task->spec === null ? null : ['key' => $task->spec->key, 'dir' => $task->spec->dir, 'status' => $task->spec->status],
+            'spec' => $task->spec === null ? null : ['key' => $task->spec->key, 'dir' => $task->spec->dir, 'path' => $task->spec->folder(), 'status' => $task->spec->status],
             'ship_input' => self::shipInput($task),
             'resume_note' => $task->resume_note,
             'depends_on' => $task->dependencies()->pluck('tasks.id')->all(),

@@ -7,6 +7,7 @@ use App\Enums\AttentionStatus;
 use App\Models\Activity;
 use App\Models\AttentionItem;
 use App\Models\Spec;
+use App\Support\SpecRecord;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use RefactorCircus\Ringside\Specs\SpecRepository;
@@ -81,7 +82,7 @@ final class FixSpecStatus
 
         $status = self::OPTIONS[$item->answer] ?? null;
         $item->loadMissing('spec.project');
-        $path = $item->spec->project->path.'/'.$item->spec->dir.'/meta.yml';
+        $path = $item->spec->folder().'/meta.yml';
 
         if ($status === null || ! is_file($path)) {
             return;
@@ -92,6 +93,7 @@ final class FixSpecStatus
             ? (string) preg_replace('/^status:.*$/m', "status: {$status}", $meta, 1)
             : rtrim($meta)."\nstatus: {$status}\n";
         File::put($path, $meta);
+        SpecRecord::commit($item->spec, "status set to {$status} in RingMaster");
 
         $item->update(['status' => AttentionStatus::Closed, 'closed_at' => now()]);
         Activity::record('spec.status', 'Status set to '.$status.' in RingMaster: '.Str::limit($item->spec->key, 80), spec: $item->spec);

@@ -135,7 +135,7 @@ final class Improver
             'Escalations:',
             ...$escalations->map(fn (AttentionItem $item): string => "- {$item->spec->project->folder}/{$item->spec->key} ({$item->source}): ".mb_strimwidth(str_replace("\n", ' ', (string) $item->evidence), 0, 300, '…'))->all(),
             'Post-mortems and feedback to read:',
-            ...$specs->filter(fn (Spec $spec): bool => in_array($spec->dir.'/post-mortem.md', $spec->files, true))->map(fn (Spec $spec): string => "- {$spec->project->path}/{$spec->dir}/post-mortem.md")->all(),
+            ...$specs->filter(fn (Spec $spec): bool => in_array($spec->dir.'/post-mortem.md', $spec->files, true))->map(fn (Spec $spec): string => "- {$spec->folder()}/post-mortem.md")->all(),
             ...$workspace->projects()->get()->map(fn (Project $project): string => "- {$project->path}/docs/agent/standards-feedback.md")->all(),
         ];
 

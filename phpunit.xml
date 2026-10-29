@@ -37,5 +37,10 @@
         <env name="RING_MASTER_BRIEFING_AT" value="(empty)"/>
         <env name="RING_MASTER_SIGNALS" value="false"/>
         <env name="RING_MASTER_RUNNER_MAX_LOAD" value="0"/>
+        <!-- Commits RingMaster makes need an identity on machines without one, such as CI. -->
+        <env name="GIT_AUTHOR_NAME" value="RingMaster Tests"/>
+        <env name="GIT_AUTHOR_EMAIL" value="tests@example.com"/>
+        <env name="GIT_COMMITTER_NAME" value="RingMaster Tests"/>
+        <env name="GIT_COMMITTER_EMAIL" value="tests@example.com"/>
     </php>
 </phpunit>
